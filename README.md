@@ -1,8 +1,6 @@
-# Base App
+# Mute Button
 
-A very basic scaffold with scala and spark
 
-## Get Started
 
-In another tmux terminal, run these commands for automatic compiling
-and execution: `~ run` The `Main.main` method is executed by default.
+## Generate Data
+`sox dal_gb_20151213 -n remix 1,2 stat -freq > freqs.txt 2<&1`
