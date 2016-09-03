@@ -10,10 +10,12 @@ import org.apache.spark.streaming._
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 
-object FrequencyIntensity {
-  type FreqIntensities = DStream[(Double, (Double, Int))]
+// A = DStream, B = ReceiverInputDStream for streaming things
+// A = RDD, B =    for reading files
+object  FrequencyIntensity {
+  type FreqIntensities = RDD[(Double, (Double, Int))]
 
-  def mapFileToFreqIntensityList(fileContents : ReceiverInputDStream[String]) : FreqIntensities = {
+  def mapFileToFreqIntensityList(fileContents : RDD[String]) : FreqIntensities = {
     val addToList = (li: List[Double], d: Double) => d +: li
     val sumLists = (p1: List[Double], p2: List[Double]) => p1 ::: p2
 
@@ -24,13 +26,19 @@ object FrequencyIntensity {
     }
   }
 
-  def meanFrequencyIntensities(freqTuple : FreqIntensities) = {
+  //def meanFrequencyIntensities(freqTuple : FreqIntensities) = {
+    //freqTuple.map {
+      //case (freq, (sum, count)) => (freq, sum * 1/count)
+    //}.transform(_.sortByKey(true))
+  //}
+
+  def meanRDDFrequencyIntensities(freqTuple : FreqIntensities) : RDD[(Double, Double)] = {
     freqTuple.map {
       case (freq, (sum, count)) => (freq, sum * 1/count)
-    }.transform(_.sortByKey(true))
+    }.sortByKey(true)
   }
 
-  def convertFileContentsToMeanIntensities(fileContents : ReceiverInputDStream[String]) = {
-    meanFrequencyIntensities( mapFileToFreqIntensityList(fileContents))
+  def convertFileContentsToMeanIntensities(fileContents : RDD[String]) = {
+    meanRDDFrequencyIntensities( mapFileToFreqIntensityList(fileContents))
   }
 }
