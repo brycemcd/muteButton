@@ -5,10 +5,6 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming._
 
-// for DateTime
-import java.text.SimpleDateFormat
-import java.util.Calendar
-
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 
@@ -25,13 +21,6 @@ object Main {
     val lines = ssc.socketTextStream("localhost", 9999)
     val meanByKey = FrequencyIntensity.convertFileContentsToMeanIntensities(lines)
 
-
-    //meanByKey.take(15).map(println)
-    //meanByKey.foreachRDD { rdd =>
-      //println("====")
-      //rdd.sortByKey().take(16).map(println)
-      //println("==== "+ Calendar.getInstance.getTime)
-    //}
     println("====")
     meanByKey.print()
     println("====")
