@@ -18,43 +18,46 @@ import org.apache.log4j.Level
 
 object Main {
 
-  def main(args: Array[String]) = {
-    Logger.getRootLogger().setLevel(Level.ERROR)
-    predictFromModel()
-  }
-
-  def mainStream(args: Array[String]) = {
-    //val conf = new SparkConf().setMaster("local[2]").setAppName("muteButton")
-    ////val sc = new SparkContext(conf)
-    //val ssc = new StreamingContext(conf, Seconds(2))
-
-    //Logger.getRootLogger().setLevel(Level.ERROR)
-
-    ////val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs-60s.txt")
-    //val lines = ssc.socketTextStream("localhost", 9999)
-    //val meanByKey = FrequencyIntensity.convertFileContentsToMeanIntensities(lines)
-
-    //println("====")
-    //meanByKey.transform(_.toDF())
-    //println("====")
-
-    //ssc.start()             // Start the computation
-    //ssc.awaitTermination()  // Wait for the computation to terminate
-  }
-
-
   lazy val conf = new SparkConf().setMaster("local[2]").setAppName("muteButton")
   lazy val sc = new SparkContext(conf)
-  def trainModel() = {
+  lazy val ssc = new StreamingContext(sc, Seconds(2))
+
+  def main(args: Array[String]) = {
+    sc // init it here to quiet the logs and make stopping easier
+    Logger.getRootLogger().setLevel(Level.ERROR)
+    //trainOfflineModel()
+    predictFromStream()
+    //getFreqs()
+    sc.stop()
+  }
+
+  def getFreqs() = {
+    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/freqs-60s.txt")
+    val meanByKey = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(lines)
+    println("====")
+    meanByKey.take(10).map(println)
+    println("====")
+  }
+
+  def trainOfflineModel() = {
     // Loads data.
-    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs-60s.txt")
-    val meanByKey = FrequencyIntensity.convertFileContentsToMeanIntensities(lines)
+    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/ad_and_game.txt")
+    val meanByKey = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(lines)
+
+    // NOTE: The way I have sox piping data in streams 2048 lines per cycle
+    // if that changes, this needs to change
+    val magicFreqCountNumber = 2048
 
     // Trains a k-means model.
+    val groupedFrequencies = meanByKey.collect().grouped(magicFreqCountNumber).map { g =>
+      Vectors.dense( g.map(_._2) )
+    }
+    val groupedFrequenciesRDD = sc.parallelize( groupedFrequencies.toList )
+
     val numClusters = 2
     val numIterations = 20
-    val parsedData = meanByKey.map( freq => Vectors.dense( freq._2 ) )
-    val model = KMeans.train(parsedData, numClusters, numIterations)
+    //val parsedData = meanByKey.map( freq => Vectors.dense( freq._2 ) )
+    val model = KMeans.train(groupedFrequenciesRDD, numClusters, numIterations)
 
     val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
     model.save(sc, modelSaveString)
@@ -65,19 +68,55 @@ object Main {
     sc.stop()
   }
 
-  def predictFromModel() = {
-    val modelPath = "models/kmeans.model-1472921561028"
+  def predictFromStream() = {
+    val modelPath = "models/kmeans.model-1473003928958"
     val model = KMeansModel.load(sc, modelPath)
 
-    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs-5s.txt")
-    val meanByKey = FrequencyIntensity.convertFileContentsToMeanIntensities(lines)
-    meanByKey.foreach { mbk =>
-      val vec = Vectors.dense( mbk._2 )
-      println("prediction: ----")
+    val lines = ssc.socketTextStream("localhost", 9999)
+    Logger.getRootLogger().setLevel(Level.ERROR)
+
+    val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
+    meanByKey.foreachRDD { mbk =>
+      println("===")
+      val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
+      //println(vec)
+      print("prediction: ---- ")
       println( model.predict(vec) )
-      println("----")
+      print(" ----")
+      println("===")
     }
 
+    ssc.start()             // Start the computation
+    ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
+  }
+
+  def predictFromFile() = {
+    //val modelPath = "models/kmeans.model-1472921561028"
+    //val model = KMeansModel.load(sc, modelPath)
+
+    ////val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs-5s.txt")
+    //val lines = ssc.socketTextStream("localhost", 9999)
+    //val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
+    //meanByKey.foreach { mbk =>
+      //val vec = Vectors.dense( mbk._2 )
+      //println("prediction: ----")
+      //println( model.predict(vec) )
+      //println("----")
+    //}
+
+    //ssc.start()             // Start the computation
+    //ssc.awaitTermination()  // Wait for the computation to terminate
+  }
+
+  def testStream(args: Array[String]) = {
+    //val meanByKey = FrequencyIntensity.convertFileContentsToMeanIntensities(lines)
+
+    //println("====")
+    //meanByKey.transform(_.toDF())
+    //println("====")
+
+    //ssc.start()             // Start the computation
+    //ssc.awaitTermination()  // Wait for the computation to terminate
   }
 }
