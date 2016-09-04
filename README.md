@@ -42,3 +42,9 @@ done
 ## Combining audio files
 
 `sox -m *.wav all_files.wav`
+
+```bash
+# from my desktop to spark4 server
+ ssh spark4.thedevranch.net "sox /media/brycemcd/filestore/spark2bkp/football/ari_phi_chunked069.wav -p" | play - -n stat -freq >/dev/null 2>&1 | nc localhost 9999
+ssh spark4.thedevranch.net "sox /media/brycemcd/filestore/spark2bkp/football/game_and_ad.wav -p" | play - -n stat -freq >/dev/null 2>&1 | nc -k 10.1.2.230 9999
+```

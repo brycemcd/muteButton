@@ -25,8 +25,9 @@ object Main {
   def main(args: Array[String]) = {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
+    protectSanity
     //trainOfflineModel()
-    predictFromStream()
+    //predictFromStream()
     //getFreqs()
     sc.stop()
   }
@@ -68,25 +69,41 @@ object Main {
     sc.stop()
   }
 
+  def protectSanity = {
+    val lines = ssc.socketTextStream("10.1.2.230", 9999)
+
+    val words = lines.flatMap(_.split(" "))
+
+    val pairs = words.map(word => (word, 1))
+    val wordCounts = pairs.reduceByKey(_ + _)
+
+    wordCounts.print()
+
+    ssc.start()
+    ssc.awaitTermination()  // Wait for the computation to terminate
+    sc.stop()
+  }
   def predictFromStream() = {
     val modelPath = "models/kmeans.model-1473003928958"
     val model = KMeansModel.load(sc, modelPath)
 
-    val lines = ssc.socketTextStream("localhost", 9999)
+    val lines = ssc.socketTextStream("10.1.2.230", 9999)
     Logger.getRootLogger().setLevel(Level.ERROR)
 
     val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
-    meanByKey.foreachRDD { mbk =>
-      println("===")
-      val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
-      //println(vec)
-      print("prediction: ---- ")
-      println( model.predict(vec) )
-      print(" ----")
-      println("===")
-    }
+    //meanByKey.foreachRDD { mbk =>
+      ////println("===")
+      //val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
+      //////println(vec)
+      //print("prediction: ---- ")
+      //print( model.predict(vec) )
+      //print(" ----")
+      //println()
+      //println("===")
+    //}
 
-    ssc.start()             // Start the computation
+    meanByKey.print()
+    ssc.start()
     ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
   }
