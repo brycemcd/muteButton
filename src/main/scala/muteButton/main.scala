@@ -20,14 +20,16 @@ object Main {
 
   lazy val conf = new SparkConf().setMaster("local[2]").setAppName("muteButton")
   lazy val sc = new SparkContext(conf)
-  lazy val ssc = new StreamingContext(sc, Seconds(2))
+  val streamWindow = 2
+  lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
+  val numberOfFrequenciesCaptured = 1024
 
   def main(args: Array[String]) = {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
     //trainOfflineModel()
-    predictFromStream()
+    predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
     //getFreqs()
     //sc.stop()
   }
@@ -83,7 +85,9 @@ object Main {
     ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
   }
-  def predictFromStream() = {
+
+  def predictFromStream(negativeAction : () => Unit,
+                        positiveAction : () => Unit) = {
     val modelPath = "models/kmeans.model-1473003928958"
     val model = KMeansModel.load(sc, modelPath)
 
@@ -94,9 +98,9 @@ object Main {
     meanByKey.foreachRDD { mbk =>
       val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
       if(vec.size == 2048) {
-        print("prediction: ---- ")
-        print( model.predict(vec) )
-        print(" ----")
+        val prediction = model.predict(vec)
+        println("prediction: ---- " + prediction + " ----")
+        if(prediction == 0) negativeAction() else positiveAction()
       } else {
         print("not 2048: ")
         print(vec.size)
@@ -108,6 +112,8 @@ object Main {
     ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
   }
+
+
 
   def predictFromFile() = {
     //val modelPath = "models/kmeans.model-1472921561028"
