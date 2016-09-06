@@ -25,11 +25,11 @@ object Main {
   def main(args: Array[String]) = {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
-    protectSanity
+    //protectSanity
     //trainOfflineModel()
-    //predictFromStream()
+    predictFromStream()
     //getFreqs()
-    sc.stop()
+    //sc.stop()
   }
 
   def getFreqs() = {
@@ -91,18 +91,19 @@ object Main {
     Logger.getRootLogger().setLevel(Level.ERROR)
 
     val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
-    //meanByKey.foreachRDD { mbk =>
-      ////println("===")
-      //val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
-      //////println(vec)
-      //print("prediction: ---- ")
-      //print( model.predict(vec) )
-      //print(" ----")
-      //println()
-      //println("===")
-    //}
+    meanByKey.foreachRDD { mbk =>
+      val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
+      if(vec.size == 2048) {
+        print("prediction: ---- ")
+        print( model.predict(vec) )
+        print(" ----")
+      } else {
+        print("not 2048: ")
+        print(vec.size)
+      }
+      println()
+    }
 
-    meanByKey.print()
     ssc.start()
     ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
