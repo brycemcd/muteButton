@@ -2,11 +2,37 @@
 
 
 
-## Generate Data
+## Predictions
+
+1. Start TCP server
+
+`ruby extra/tcp_server.rb`
+
+2. Start Prediction Software
+
+`sbt run`
+
+3. Feed audio data into prediction software
+
+(in this case, the sound file is being read in from another system)
+
+`ssh brycemcd@10.1.2.102 "sox /home/brycemcd/Desktop/dal_gb_20151213 -p" | sox - -n remix 1,2 stat -freq 2>&1 | nc 10.1.2.230 9999`
+
+## Generate Data For Modeling
+
 `sox dal_gb_20151213 -n remix 1,2 stat -freq > freqs.txt 2<&1`
 
 ## Send Audio Data to Spark Streaming Socket
+
 ` sox dal_gb_20151213 -n remix 1,2 stat -freq 2<&1 | nc -lk 9999`
+
+## Split one audio file into lots of small files (for supervising)
+
+[helpful source](http://sox.10957.n7.nabble.com/Split-a-big-file-I-m-recording-in-smaller-pieces-td4774.html)
+
+`sox infile.ogg output.ogg trim 0 10 : newfile : restart`
+
+"Will generate output001.ogg, output002.ogg, ouput003.ogg ,etc....... to ouput_finish.ogg."
 
 ## Supervising Files
 ```bash
