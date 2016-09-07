@@ -17,6 +17,7 @@ package object NewTypes {
 }
 
 import muteButton.NewTypes._
+import scala.util.matching.Regex
 
 trait FrequencyIntensity [
   A,
@@ -38,8 +39,11 @@ object FrequencyIntensityRDD extends FrequencyIntensity[
   RDD[(Double, Double)]
 ] {
   def mapFileToFreqTrainingIntensity(fileContents : RDD[String]) = {
-    fileContents.map(_.split("  ")).filter(_.length == 2).map {
-      case tup : Array[String] => (tup(0).toDouble, tup(1).toDouble)
+    val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})  (freq.*)""".r
+
+    fileContents.flatMap {
+        case freqIntensLines(freq, intense, seqNum) => Some( (seqNum, (freq.toDouble, intense.toDouble)) )
+        case _ => None
     }
   }
 
@@ -57,7 +61,8 @@ object FrequencyIntensityRDD extends FrequencyIntensity[
     }.sortByKey(true)
   }
 
-  def convertFileContentsToMeanIntensities(fileContents : RDD[String]) : RDD[(Double, Double)] = {
+  //def convertFileContentsToMeanIntensities(fileContents : RDD[String]) : RDD[(Double, Double)] = {
+  def convertFileContentsToMeanIntensities(fileContents : RDD[String]) = {
     //meanFrequencyIntensities(
       //mapFileToFreqIntensityList(fileContents)
     //)

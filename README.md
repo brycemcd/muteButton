@@ -116,6 +116,20 @@ This positive_frequencies.txt file can be read in to the learner using a slightl
 modified code path. It's the same data, but not streamed over a socket. Each
 set of frequencies can be vectorized and labeled.
 
+Each sample needs to be labeled in order to ensure that when the data is read
+in and distributed across the cluster that is is combined correctly when it's
+vectorized as a training sample. The easiest way I've found to do this as of now
+is to separate each sample into its own file and then add a third column to each file
+with its filename. When the training routine runs, it will group each frequency
+intensity touple together by its filename and output the correct vector.
+
+Split the file with a prefix of 'freq': `split game_freqs.txt -l 2048 freq`
+
+Add the filename as a column: `for f in freqa*; do sed -i "s:$:  $f:" $f; done`
+
+At this point, it's probably safe to recombine the files into one again but
+I haven't tried this.
+
 ## Testing The System
 
 1. Start TCP server `ruby extra/tcp_server.rb`
@@ -154,4 +168,9 @@ set of frequencies can be vectorized and labeled.
 # from my desktop to spark4 server
  ssh spark4.thedevranch.net "sox /media/brycemcd/filestore/spark2bkp/football/ari_phi_chunked069.wav -p" | play - -n stat -freq >/dev/null 2>&1 | nc localhost 9999
 ssh spark4.thedevranch.net "sox /media/brycemcd/filestore/spark2bkp/football/game_and_ad.wav -p" | play - -n stat -freq >/dev/null 2>&1 | nc -k 10.1.2.230 9999
+```
+
+```bash
+split ad_and_game.txt -l 2048 freq
+for f in freqa*; do sed -i "s:$:  $f:" $f; done
 ```

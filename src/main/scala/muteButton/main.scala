@@ -18,56 +18,48 @@ import org.apache.log4j.Level
 
 object Main {
 
-  lazy val conf = new SparkConf().setMaster("local[2]").setAppName("muteButton")
+  lazy val conf = new SparkConf().setMaster("local[*]").setAppName("muteButton")
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
   lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
   val numberOfFrequenciesCaptured = 1024
+  val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
+
 
   def main(args: Array[String]) = {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
-    //trainOfflineModel()
-    predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
+    trainOfflineModel()
+    //predictFromStream( PredictionAction.negativeCase,
+                       //PredictionAction.positiveCase)
     //getFreqs()
-    //sc.stop()
-  }
-
-  def getFreqs() = {
-    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/freqs-60s.txt")
-    val meanByKey = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(lines)
-    println("====")
-    meanByKey.take(10).map(println)
-    println("====")
   }
 
   def trainOfflineModel() = {
     // Loads data.
-    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/ad_and_game.txt")
+    // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
+    // for training prepared data
+    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/exp/freqzz*")
     val meanByKey = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(lines)
 
-    // NOTE: The way I have sox piping data in streams 2048 lines per cycle
-    // if that changes, this needs to change
-    val magicFreqCountNumber = 2048
-
-    // Trains a k-means model.
-    val groupedFrequencies = meanByKey.collect().grouped(magicFreqCountNumber).map { g =>
-      Vectors.dense( g.map(_._2) )
+    // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
+    // NOTE: There's a slight risk that frequencies and intensity examples will
+    // get mixed up when this is distributed across a cluster
+    val groupedFrequenciesRDD = meanByKey.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
+      Vectors.dense( x.map(_._2) )
     }
-    val groupedFrequenciesRDD = sc.parallelize( groupedFrequencies.toList )
+
+    // NOTE: this triggers an action, consider if this is useful
+    println("training on " + groupedFrequenciesRDD.count() + " cases")
 
     val numClusters = 2
     val numIterations = 20
-    //val parsedData = meanByKey.map( freq => Vectors.dense( freq._2 ) )
     val model = KMeans.train(groupedFrequenciesRDD, numClusters, numIterations)
-
     val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
-    model.save(sc, modelSaveString)
+    //model.save(sc, modelSaveString)
 
-    println(model.toPMML())
-    println("====")
-
+    //println( model.toPMML() )
     sc.stop()
   }
 
@@ -96,8 +88,8 @@ object Main {
 
     val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
     meanByKey.foreachRDD { mbk =>
-      val vec = Vectors.dense( mbk.map(_._2).take( 2048 ) )
-      if(vec.size == 2048) {
+      val vec = Vectors.dense( mbk.map(_._2).take( frequenciesInWindow ) )
+      if(vec.size == frequenciesInWindow) {
         val prediction = model.predict(vec)
         println("prediction: ---- " + prediction + " ----")
         if(prediction == 0) negativeAction() else positiveAction()
@@ -111,36 +103,5 @@ object Main {
     ssc.start()
     ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
-  }
-
-
-
-  def predictFromFile() = {
-    //val modelPath = "models/kmeans.model-1472921561028"
-    //val model = KMeansModel.load(sc, modelPath)
-
-    ////val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs-5s.txt")
-    //val lines = ssc.socketTextStream("localhost", 9999)
-    //val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
-    //meanByKey.foreach { mbk =>
-      //val vec = Vectors.dense( mbk._2 )
-      //println("prediction: ----")
-      //println( model.predict(vec) )
-      //println("----")
-    //}
-
-    //ssc.start()             // Start the computation
-    //ssc.awaitTermination()  // Wait for the computation to terminate
-  }
-
-  def testStream(args: Array[String]) = {
-    //val meanByKey = FrequencyIntensity.convertFileContentsToMeanIntensities(lines)
-
-    //println("====")
-    //meanByKey.transform(_.toDF())
-    //println("====")
-
-    //ssc.start()             // Start the computation
-    //ssc.awaitTermination()  // Wait for the computation to terminate
   }
 }
