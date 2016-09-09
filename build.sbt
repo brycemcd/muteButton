@@ -2,7 +2,8 @@ lazy val root = (project in file(".")).
 settings(
   name := "muteButton",
   version := "0.0.1",
-  scalaVersion := "2.11.7",
+  //scalaVersion := "2.11.7",
+  scalaVersion := "2.10.6",
   mainClass := Some("Main"),
 
    libraryDependencies += "org.apache.spark" %% "spark-core" % "1.6.2",

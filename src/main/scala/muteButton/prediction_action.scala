@@ -5,5 +5,7 @@ object PredictionAction {
   val negativeCase = () => toggleSystem("neg")
   val positiveCase = () => toggleSystem("ops")
 
-  private def toggleSystem(soundControl : String) = println("echo '"+soundControl+"'" !)
+  private def toggleSystem(soundControl : String) = {
+    "echo '"+soundControl+"'>> predictions" !
+  }
 }

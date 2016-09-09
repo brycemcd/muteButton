@@ -12,13 +12,14 @@ import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.mllib.linalg.Vectors
 
-
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 
 object Main {
 
-  lazy val conf = new SparkConf().setMaster("local[*]").setAppName("muteButton")
+  lazy val conf = new SparkConf()
+    .setAppName("muteButton")
+    .setMaster("local[*]")
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
   lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
@@ -30,9 +31,9 @@ object Main {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
-    trainOfflineModel()
-    //predictFromStream( PredictionAction.negativeCase,
-                       //PredictionAction.positiveCase)
+    //trainOfflineModel()
+    predictFromStream( PredictionAction.negativeCase,
+                       PredictionAction.positiveCase)
     //getFreqs()
   }
 
@@ -40,7 +41,8 @@ object Main {
     // Loads data.
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
-    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/exp/freqzz*")
+    //val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/exp/freqzz*")
+    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/exp/*-labeled.txt")
     val meanByKey = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(lines)
 
     // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
@@ -57,7 +59,7 @@ object Main {
     val numIterations = 20
     val model = KMeans.train(groupedFrequenciesRDD, numClusters, numIterations)
     val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
-    //model.save(sc, modelSaveString)
+    model.save(sc, modelSaveString)
 
     //println( model.toPMML() )
     sc.stop()
@@ -78,9 +80,9 @@ object Main {
     sc.stop()
   }
 
-  def predictFromStream(negativeAction : () => Unit,
-                        positiveAction : () => Unit) = {
-    val modelPath = "models/kmeans.model-1473003928958"
+  def predictFromStream(negativeAction : () => Int,
+                        positiveAction : () => Int) = {
+    val modelPath = "models/kmeans.model-1473003588743"
     val model = KMeansModel.load(sc, modelPath)
 
     val lines = ssc.socketTextStream("10.1.2.230", 9999)

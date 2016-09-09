@@ -174,3 +174,10 @@ ssh spark4.thedevranch.net "sox /media/brycemcd/filestore/spark2bkp/football/gam
 split ad_and_game.txt -l 2048 freq
 for f in freqa*; do sed -i "s:$:  $f:" $f; done
 ```
+
+```bash
+# plays audio from TV into computer, saves file for later processing,
+# outputs frequencies and pipes audo into stereo
+sudo sox -t alsa hw:3 -p gain -10 | tee car_den_3 | sudo sox - -t alsa hw:2 stat -freq 2>&1 | nc 10.1.2.230 9999
+```
+
