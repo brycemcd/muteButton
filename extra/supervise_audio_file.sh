@@ -1,26 +1,32 @@
 #!/bin/bash
 
-for i in $(seq -s "  " -w 21 30); do
-branch:  - last commit: 
-  export base="/media/brycemcd/filestore/spark2bkp/football"
+#for i in $(seq -s "  " -w 21 30); do
+
+fs=$(ssh spark4.thedevranch.net "ls /media/brycemcd/filestore/spark2bkp/football/*chunked*wav")
+
+for f in $fs; do
+  base="/media/brycemcd/filestore/spark2bkp/football"
+  supervised_base="$base/supervised_samples"
   export fpath="$base/ari_phi_chunked0${i}.wav"
 
-  ssh spark4.thedevranch.net sox $fpath -t sox - tempo 3 | sox -q -t sox
-- -d
+  ssh spark4.thedevranch.net sox $f -t sox - tempo 2 | sox -q -t sox - -d
 
-  espeak -v en "that was $i"
-  echo -n "Enter some text > "
+  echo -n "Type a if that was an ad, g if that was a game, b if both and u if unsure > "
   read text
+
   echo "You entered: $text"
   if [ $text = "g" ]; then
     echo "game!"
-    ssh spark4.thedevranch.net mv $fpath "$base/game"
+    ssh spark4.thedevranch.net mv $f "$supervised_base/game"
   elif [ $text = "a" ]; then
     echo "ad!"
-    ssh spark4.thedevranch.net mv $fpath "$base/ad"
+    ssh spark4.thedevranch.net mv $f "$supervised_base/ad"
   elif [ $text = "b" ]; then
     echo "both"
-    ssh spark4.thedevranch.net mv $fpath "$base/both"
+    ssh spark4.thedevranch.net mv $f "$supervised_base/both"
+  elif [ $text = "u" ]; then
+    echo "unsure"
+    ssh spark4.thedevranch.net mv $f "$supervised_base/unsure"
   else
     echo "something else"
   fi
