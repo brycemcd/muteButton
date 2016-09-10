@@ -110,7 +110,7 @@ on the source system.
 After a number of training examples have been produced, frequency/intensity
 data can be extracted by running the following sox command:
 
-`sox /path/to/positive_examples/*.wav -p | sox - -n remix 1,2 remix 1,2 stat -freq 2>positive_frequencies.txt`
+`sox /path/to/positive_examples/*.wav -p | sox - -n remix 1,2 stat -freq 2>positive_frequencies.txt`
 
 This positive_frequencies.txt file can be read in to the learner using a slightly
 modified code path. It's the same data, but not streamed over a socket. Each

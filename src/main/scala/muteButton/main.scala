@@ -12,6 +12,10 @@ import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.mllib.linalg.Vectors
 
+import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD, LogisticRegressionModel}
+import org.apache.spark.mllib.evaluation.MulticlassMetrics
+import org.apache.spark.mllib.regression.LabeledPoint
+
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 
@@ -31,9 +35,9 @@ object Main {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
-    //trainOfflineModel()
-    predictFromStream( PredictionAction.negativeCase,
-                       PredictionAction.positiveCase)
+    trainOfflineModel()
+    //predictFromStream( PredictionAction.negativeCase,
+                       //PredictionAction.positiveCase)
     //getFreqs()
   }
 
@@ -41,27 +45,44 @@ object Main {
     // Loads data.
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
-    //val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/exp/freqzz*")
-    val lines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/freqs/exp/*-labeled.txt")
-    val meanByKey = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(lines)
+    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt")
+    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt")
+
+    println("training ad lines " + trainAdLines.count())
+    println("training game lines " + trainGameLines.count())
+
+    val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
+    val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
+
+    println("training ad touples " + trainAdTouples.count())
+    println("training game touples " + trainGameTouples.count())
+
 
     // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
     // NOTE: There's a slight risk that frequencies and intensity examples will
     // get mixed up when this is distributed across a cluster
-    val groupedFrequenciesRDD = meanByKey.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      Vectors.dense( x.map(_._2) )
+    val trainAdPoints = trainAdTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
+      new LabeledPoint(1.0, Vectors.dense( x.map(_._2) ))
     }
 
-    // NOTE: this triggers an action, consider if this is useful
-    println("training on " + groupedFrequenciesRDD.count() + " cases")
+    val trainGamePoints = trainGameTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
+      new LabeledPoint(0.0, Vectors.dense( x.map(_._2) ))
+    }
 
-    val numClusters = 2
-    val numIterations = 20
-    val model = KMeans.train(groupedFrequenciesRDD, numClusters, numIterations)
-    val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
-    model.save(sc, modelSaveString)
+    println("training ad points " + trainAdPoints.count())
+    println("training game points " + trainGamePoints.count())
+
+    val allPoints = trainGamePoints.union(trainAdPoints)
+
+    println("training all points " + allPoints.count())
+
+    val model = LogisticRegressionWithSGD.train(allPoints, 2)
+
+    //val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
+    //model.save(sc, modelSaveString)
 
     //println( model.toPMML() )
+    println( model.intercept )
     sc.stop()
   }
 
