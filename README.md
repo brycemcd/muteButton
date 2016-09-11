@@ -98,9 +98,10 @@ and negative examples. Training is monotonous. I break up long files into 10
 second increments using the following sox command provided by an answer in
 [this forum.](http://sox.10957.n7.nabble.com/Split-a-big-file-I-m-recording-in-smaller-pieces-td4774.html)
 
-`sox infile output trim 0 10 : newfile : restart`
+> Will generate output001.ogg, output002.ogg, ouput003.ogg ,etc....... to ouput_finish.ogg
 
-"Will generate output001.ogg, output002.ogg, ouput003.ogg ,etc....... to ouput_finish.ogg."
+`sox dal_gb_20151213 dal_gb_20151213_chunked.wav trim 0 10 : newfile : restart`
+
 
 This will generate several 10 second snippets of the larger file. `/extra/supervise_audio_file.sh`
 Can be used to playback the 10 second snippets at a playback speed of 3x. Key

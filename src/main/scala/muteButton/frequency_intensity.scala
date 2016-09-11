@@ -39,7 +39,7 @@ object FrequencyIntensityRDD extends FrequencyIntensity[
   RDD[(Double, Double)]
 ] {
   def mapFileToFreqTrainingIntensity(fileContents : RDD[String]) = {
-    val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})  (freq.*)""".r
+    val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})  (.*freqs.*)""".r
 
     fileContents.flatMap {
         case freqIntensLines(freq, intense, seqNum) => Some( (seqNum, (freq.toDouble, intense.toDouble)) )

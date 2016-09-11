@@ -39,5 +39,8 @@ for c in ${catArr[@]}; do
     echo "labeled $filename"
 
   done
+
+  # NOTE: it's a good idea to combine all -labeled.txt files into a single file
+  # based on previous performance tests
 done
 cd $returnDir

@@ -9,15 +9,27 @@ import org.apache.spark.streaming.dstream.ReceiverInputDStream
 import org.apache.spark.streaming.dstream.DStream
 
 import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
-import org.apache.spark.sql.SQLContext
 import org.apache.spark.mllib.linalg.Vectors
 
-import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD, LogisticRegressionModel}
+import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD,LogisticRegressionWithLBFGS, LogisticRegressionModel}
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
 import org.apache.spark.mllib.regression.LabeledPoint
 
+import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.classification.{BinaryLogisticRegressionSummary, LogisticRegression}
+
+import org.apache.spark.sql.SQLContext
+import sqlContext.implicits._
+
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
+
+// NOTE: I just lifted this out of ml-playground. Remove it and just use
+// the playground later. I really should be using it here but I'm on a roll
+case class SGDModelParams( regParam: Double,
+                           numIterations: Int) {
+
+}
 
 object Main {
 
@@ -40,6 +52,12 @@ object Main {
                        //PredictionAction.positiveCase)
     //getFreqs()
   }
+  private def generateModelParams : Seq[SGDModelParams] = {
+    // NOTE: I couldn't find in my notes if these were sensible defaults
+    val regs = Seq[Double](0.001, 0.01, 0.1, 1, 3, 10)
+    for(regParam <- regs;
+         numIterations <- (5 to 10 by 10) ) yield SGDModelParams(regParam, numIterations)
+  }
 
   def trainOfflineModel() = {
     // Loads data.
@@ -48,14 +66,14 @@ object Main {
     val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt")
     val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt")
 
-    println("training ad lines " + trainAdLines.count())
-    println("training game lines " + trainGameLines.count())
+    //println("training ad lines " + trainAdLines.count())
+    //println("training game lines " + trainGameLines.count())
 
     val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
     val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
 
-    println("training ad touples " + trainAdTouples.count())
-    println("training game touples " + trainGameTouples.count())
+    //println("training ad touples " + trainAdTouples.count())
+    //println("training game touples " + trainGameTouples.count())
 
 
     // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
@@ -69,20 +87,53 @@ object Main {
       new LabeledPoint(0.0, Vectors.dense( x.map(_._2) ))
     }
 
-    println("training ad points " + trainAdPoints.count())
-    println("training game points " + trainGamePoints.count())
 
-    val allPoints = trainGamePoints.union(trainAdPoints)
+    //println("training ad points " + trainAdPoints.count())
+    //println("training game points " + trainGamePoints.count())
 
-    println("training all points " + allPoints.count())
+    val allPoints = trainGamePoints.union(trainAdPoints).toDF()
 
-    val model = LogisticRegressionWithSGD.train(allPoints, 2)
+    val splits = allPoints.randomSplit(Array(0.8, 0.2), seed = 11L)
+    val training = splits(0).cache()
+    val test = splits(1).cache()
+
+    // header:
+    println("regParam, iterations, f1, precision, recall")
+    generateModelParams.map { modelParam =>
+      //val fit = new LogisticRegressionWithSGD()
+      //fit.optimizer.
+        //setNumIterations(modelParam.numIterations).
+        //setRegParam(modelParam.regParam)
+      //val model = fit.run(training)
+        val fit = new LogisticRegression()
+          .setMaxIter(modelParam.numIterations)
+          .setRegParam(modelParam.regParam)
+          .setElasticNetParam(0.8)
+        val model = fit.fit(training)
+
+
+      //model.clearThreshold()
+      val trainingSummary = model.summary
+      val objectiveHistory = trainingSummary.objectiveHistory
+      objectiveHistory.foreach(loss => println(loss))
+
+
+      val predictionAndLabels = test.map { case LabeledPoint(label, features) =>
+        val prediction = model.predict(features)
+        (prediction, label)
+      }
+
+      val metrics = new MulticlassMetrics(predictionAndLabels)
+      println(modelParam.regParam + "," + modelParam.numIterations + "," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
+    }
+
+    //println("training all points " + allPoints.count())
+
 
     //val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
     //model.save(sc, modelSaveString)
 
     //println( model.toPMML() )
-    println( model.intercept )
     sc.stop()
   }
 
