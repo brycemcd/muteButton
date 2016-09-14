@@ -10,6 +10,7 @@ import org.apache.spark.streaming.dstream.DStream
 
 //import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
 import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.Vector
 
 //import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD,LogisticRegressionWithLBFGS, LogisticRegressionModel}
 //import org.apache.spark.mllib.evaluation.MulticlassMetrics
@@ -20,6 +21,7 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 //import sqlContext.implicits._
+import org.apache.spark.ml.feature.StandardScaler
 
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
@@ -70,54 +72,58 @@ object Main {
     // Loads data.
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
+    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
     val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked094_freqs-labeled.txt")
-    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt")
+    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked088_freqs-labeled.txt")
 
-    //println("training ad lines " + trainAdLines.count())
-    //println("training game lines " + trainGameLines.count())
+    println("training ad lines " + trainAdLines.count())
+    println("training game lines " + trainGameLines.count())
 
     val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
     val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
 
-    //println("training ad touples " + trainAdTouples.count())
-    //println("training game touples " + trainGameTouples.count())
+    println("training ad touples " + trainAdTouples.count())
+    println("training game touples " + trainGameTouples.count())
 
 
-    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
     // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
     // NOTE: There's a slight risk that frequencies and intensity examples will
     // get mixed up when this is distributed across a cluster
-    val schemaRecord = trainAdTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).first()
-    val fields = schemaRecord.map { case(freq, inten) => StructField(freq.toString, DoubleType, false) }
-    val schema = StructType( StructField("label", DoubleType, false) +: fields )
 
     val trainAdPoints = trainAdTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      val duh = ("label", 1.0) +: x
-      Row.fromSeq( duh.map(_._2) )
+      (1.0, Vectors.dense( x.map(_._2) ))
     }
 
-    val adDataFrame = sqlContext.createDataFrame(trainAdPoints, schema)
 
-    trainAdPoints.take(5).foreach(x => println(x(0)))
-
-    //val trainGamePoints = trainGameTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      //new LabeledPoint(0.0, Vectors.dense( x.map(_._2) ))
-    //}.take(10)
+    val trainGamePoints = trainGameTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
+      (0.0, Vectors.dense( x.map(_._2) ))
+    }
 
 
-    //println("training ad points " + trainAdPoints.count())
-    //println("training game points " + trainGamePoints.count())
+    println("training ad points " + trainAdPoints.count())
+    println("training game points " + trainGamePoints.count())
 
-    //val allPoints = trainGamePoints.union(trainAdPoints)
+    val allPoints = trainGamePoints.union(trainAdPoints)
+    val allPointsDF = sqlContext.createDataFrame(allPoints)
+                                  .toDF("label", "features")
 
-    //val splits = allPoints.randomSplit(Array(0.8, 0.2), seed = 11L)
-    val training = adDataFrame
-    //val training = splits(0).cache()
-    //val test = splits(1).cache()
+    val scaler = new StandardScaler()
+      .setInputCol("features")
+      .setOutputCol("scaledFeatures")
+      .setWithStd(true)
+      .setWithMean(false)
+
+    val scalerModel = scaler.fit(allPointsDF)
+    val transformedData = scalerModel.transform(allPointsDF)
+
+    val splits = transformedData.randomSplit(Array(0.8, 0.2), seed = 11L)
+    val training = splits(0).cache()
+    val test = splits(1).cache()
 
     // header:
     println("regParam, iterations, f1, precision, recall")
-    generateModelParams.map { modelParam =>
+    generateModelParams.take(2).map { modelParam =>
+      println(s"fitting new model with $modelParam")
       //val fit = new LogisticRegressionWithSGD()
       //fit.optimizer.
         //setNumIterations(modelParam.numIterations).
@@ -125,11 +131,13 @@ object Main {
       //val model = fit.run(training)
 
         // TODO: this is the new one
-        val fit = new LogisticRegression()
+        val lr = new LogisticRegression()
           .setMaxIter(modelParam.numIterations)
           .setRegParam(modelParam.regParam)
           .setElasticNetParam(0.8)
-        val model = fit.fit(training)
+          .setFeaturesCol("scaledFeatures")
+
+        val model = lr.fit(training)
 
 
       ////model.clearThreshold()
@@ -137,14 +145,14 @@ object Main {
       val objectiveHistory = trainingSummary.objectiveHistory
       objectiveHistory.foreach(loss => println(loss))
 
-
-      //val predictionAndLabels = test.map { case LabeledPoint(label, features) =>
-        //val prediction = model.predict(features)
-        //(prediction, label)
-      //}
-
-      //val metrics = new MulticlassMetrics(predictionAndLabels)
-      //println(modelParam.regParam + "," + modelParam.numIterations + "," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
+      model.transform(test)
+        .select("label", "rawPrediction", "prediction")
+        .show()
+        //.foreach {
+          //case Row(label: Double, rawPrediction: Vector, prediction: Double) =>
+            //println(s"$label -> ($prediction, $rawPrediction)")
+        //}
+        //.collect()
     }
 
     //println("training all points " + allPoints.count())
