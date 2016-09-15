@@ -13,7 +13,7 @@ import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.linalg.Vector
 
 //import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD,LogisticRegressionWithLBFGS, LogisticRegressionModel}
-//import org.apache.spark.mllib.evaluation.MulticlassMetrics
+import org.apache.spark.mllib.evaluation.MulticlassMetrics
 import org.apache.spark.mllib.regression.LabeledPoint
 
 
@@ -45,6 +45,10 @@ object Main {
   lazy val conf = new SparkConf()
     .setAppName("muteButton")
     .setMaster("local[*]")
+    .set("spark.executor.memory", "10g")
+    .set("spark.executor-memory", "30g")
+    .set("spark.driver.memory", "10g")
+    .set("spark.driver-memory", "10g")
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
   lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
@@ -63,9 +67,9 @@ object Main {
   }
   private def generateModelParams : Seq[SGDModelParams] = {
     // NOTE: I couldn't find in my notes if these were sensible defaults
-    val regs = Seq[Double](0.001, 0.01, 0.1, 1, 3, 10)
+    val regs = Seq[Double](0.01, 0.1)
     for(regParam <- regs;
-         numIterations <- (5 to 10 by 10) ) yield SGDModelParams(regParam, numIterations)
+         numIterations <- (3000 to 3000 by 10) ) yield SGDModelParams(regParam, numIterations)
   }
 
   def trainOfflineModel() = {
@@ -73,17 +77,17 @@ object Main {
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
     val sqlContext = new org.apache.spark.sql.SQLContext(sc)
-    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked094_freqs-labeled.txt")
-    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked088_freqs-labeled.txt")
+    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt")
+    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt")
 
-    println("training ad lines " + trainAdLines.count())
-    println("training game lines " + trainGameLines.count())
+    //println("training ad lines " + trainAdLines.count())
+    //println("training game lines " + trainGameLines.count())
 
     val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
     val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
 
-    println("training ad touples " + trainAdTouples.count())
-    println("training game touples " + trainGameTouples.count())
+    //println("training ad touples " + trainAdTouples.count())
+    //println("training game touples " + trainGameTouples.count())
 
 
     // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
@@ -100,16 +104,16 @@ object Main {
     }
 
 
-    println("training ad points " + trainAdPoints.count())
-    println("training game points " + trainGamePoints.count())
+    //println("training ad points " + trainAdPoints.count())
+    //println("training game points " + trainGamePoints.count())
 
     val allPoints = trainGamePoints.union(trainAdPoints)
     val allPointsDF = sqlContext.createDataFrame(allPoints)
-                                  .toDF("label", "features")
+                                  .toDF("label", "rawfeatures")
 
     val scaler = new StandardScaler()
-      .setInputCol("features")
-      .setOutputCol("scaledFeatures")
+      .setInputCol("rawfeatures")
+      .setOutputCol("features")
       .setWithStd(true)
       .setWithMean(false)
 
@@ -122,37 +126,30 @@ object Main {
 
     // header:
     println("regParam, iterations, f1, precision, recall")
-    generateModelParams.take(2).map { modelParam =>
-      println(s"fitting new model with $modelParam")
-      //val fit = new LogisticRegressionWithSGD()
-      //fit.optimizer.
-        //setNumIterations(modelParam.numIterations).
-        //setRegParam(modelParam.regParam)
-      //val model = fit.run(training)
+    generateModelParams.map { modelParam =>
+      //println(s"fitting new model with $modelParam")
 
-        // TODO: this is the new one
-        val lr = new LogisticRegression()
-          .setMaxIter(modelParam.numIterations)
-          .setRegParam(modelParam.regParam)
-          .setElasticNetParam(0.8)
-          .setFeaturesCol("scaledFeatures")
+      // TODO: this is the new one
+      var lr = new LogisticRegression()
+        .setMaxIter(modelParam.numIterations)
+        .setRegParam(modelParam.regParam)
+        .setElasticNetParam(0.8)
+        .setFeaturesCol("features")
 
-        val model = lr.fit(training)
+      var model = lr.fit(training)
 
 
-      ////model.clearThreshold()
-      val trainingSummary = model.summary
-      val objectiveHistory = trainingSummary.objectiveHistory
+      var trainingSummary = model.summary
+      var objectiveHistory = trainingSummary.objectiveHistory
       objectiveHistory.foreach(loss => println(loss))
 
-      model.transform(test)
+      var predictionAndLabel = model.transform(test)
         .select("label", "rawPrediction", "prediction")
-        .show()
-        //.foreach {
-          //case Row(label: Double, rawPrediction: Vector, prediction: Double) =>
-            //println(s"$label -> ($prediction, $rawPrediction)")
-        //}
-        //.collect()
+        .map {
+          case Row(label: Double, rawPrediction: Vector, prediction: Double) => (label, prediction)
+        }
+      var metrics = new MulticlassMetrics(predictionAndLabel)
+      println(modelParam.regParam + "," + modelParam.numIterations + "," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
     }
 
     //println("training all points " + allPoints.count())
