@@ -3,3 +3,4 @@ metastore_db/
 derby.log
 models/
 conf/
+log/

@@ -126,31 +126,36 @@ object Main {
 
     // header:
     println("regParam, iterations, f1, precision, recall")
-    generateModelParams.map { modelParam =>
+    //generateModelParams.map { modelParam =>
       //println(s"fitting new model with $modelParam")
 
       // TODO: this is the new one
-      var lr = new LogisticRegression()
-        .setMaxIter(modelParam.numIterations)
-        .setRegParam(modelParam.regParam)
-        .setElasticNetParam(0.8)
+      val reg = 0.0001
+      val lr = new LogisticRegression()
+        .setMaxIter(3000)
+        .setRegParam(reg)
         .setFeaturesCol("features")
+        //.setElasticNetParam(0.8)
 
-      var model = lr.fit(training)
+      val model = lr.fit(training)
 
 
-      var trainingSummary = model.summary
-      var objectiveHistory = trainingSummary.objectiveHistory
-      objectiveHistory.foreach(loss => println(loss))
+      val trainingSummary = model.summary
+      val objectiveHistory = trainingSummary.objectiveHistory
+      val modelLog = "log/training-" + reg + "-" + System.currentTimeMillis()
+      objectiveHistory.foreach { loss =>
+        scala.tools.nsc.io.File(modelLog).appendAll(loss.toString + "\n")
+      }
 
-      var predictionAndLabel = model.transform(test)
+      val predictionAndLabel = model.transform(test)
         .select("label", "rawPrediction", "prediction")
         .map {
           case Row(label: Double, rawPrediction: Vector, prediction: Double) => (label, prediction)
         }
-      var metrics = new MulticlassMetrics(predictionAndLabel)
-      println(modelParam.regParam + "," + modelParam.numIterations + "," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
-    }
+      val metrics = new MulticlassMetrics(predictionAndLabel)
+      //println(modelParam.regParam + "," + modelParam.numIterations + "," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
+      println("0.1,3000," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
+    //}
 
     //println("training all points " + allPoints.count())
 
