@@ -28,10 +28,12 @@ import org.apache.log4j.Level
 
 // spark.ml
 import org.apache.spark.ml.classification.LogisticRegression
-import org.apache.spark.ml.classification.{BinaryLogisticRegressionSummary, LogisticRegression}
+import org.apache.spark.ml.classification.{BinaryLogisticRegressionSummary, LogisticRegressionModel}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.{StructType,StructField,StringType};
 
+import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
 
 // NOTE: I just lifted this out of ml-playground. Remove it and just use
 // the playground later. I really should be using it here but I'm on a roll
@@ -45,10 +47,7 @@ object Main {
   lazy val conf = new SparkConf()
     .setAppName("muteButton")
     .setMaster("local[*]")
-    .set("spark.executor.memory", "10g")
-    .set("spark.executor-memory", "30g")
-    .set("spark.driver.memory", "10g")
-    .set("spark.driver-memory", "10g")
+
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
   lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
@@ -60,9 +59,9 @@ object Main {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
-    trainOfflineModel()
-    //predictFromStream( PredictionAction.negativeCase,
-                       //PredictionAction.positiveCase)
+    //trainOfflineModel()
+    predictFromStream( PredictionAction.negativeCase,
+                       PredictionAction.positiveCase)
     //getFreqs()
   }
   private def generateModelParams : Seq[SGDModelParams] = {
@@ -77,8 +76,8 @@ object Main {
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
     val sqlContext = new org.apache.spark.sql.SQLContext(sc)
-    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt")
-    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt")
+    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt")
+    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt")
 
     //println("training ad lines " + trainAdLines.count())
     //println("training game lines " + trainGameLines.count())
@@ -130,22 +129,40 @@ object Main {
       //println(s"fitting new model with $modelParam")
 
       // TODO: this is the new one
-      val reg = 0.0001
       val lr = new LogisticRegression()
         .setMaxIter(3000)
-        .setRegParam(reg)
         .setFeaturesCol("features")
-        //.setElasticNetParam(0.8)
 
-      val model = lr.fit(training)
+      val paramGrid = new ParamGridBuilder()
+        .addGrid(lr.regParam, Array(0.1, 0.01))
+        .addGrid(lr.elasticNetParam, Array(0.0, 0.5, 1.0))
+        .build()
+
+      //val evaluator = new BinaryClassificationEvaluator()
+                          //.setMetricName("areaUnderPR")
+      val evaluator = new MulticlassClassificationEvaluator()
+
+      val trainValidationSplit = new TrainValidationSplit()
+        .setEstimator(lr)
+        .setEvaluator(evaluator)
+        .setEstimatorParamMaps(paramGrid)
+        .setTrainRatio(0.8)
 
 
-      val trainingSummary = model.summary
-      val objectiveHistory = trainingSummary.objectiveHistory
-      val modelLog = "log/training-" + reg + "-" + System.currentTimeMillis()
-      objectiveHistory.foreach { loss =>
-        scala.tools.nsc.io.File(modelLog).appendAll(loss.toString + "\n")
-      }
+      val model = trainValidationSplit.fit(training)
+
+
+      val savableModel = lr.fit(training, model.bestModel.extractParamMap)
+
+      println("best model: " + model.bestModel)
+
+      // TODO: print metrics to model tuning
+      //val trainingSummary = model.summary
+      //val objectiveHistory = trainingSummary.objectiveHistory
+      //val modelLog = "log/training-" + reg + "-" + System.currentTimeMillis()
+      //objectiveHistory.foreach { loss =>
+        //scala.tools.nsc.io.File(modelLog).appendAll(loss.toString + "\n")
+      //}
 
       val predictionAndLabel = model.transform(test)
         .select("label", "rawPrediction", "prediction")
@@ -160,52 +177,57 @@ object Main {
     //println("training all points " + allPoints.count())
 
 
-    //val modelSaveString = "models/kmeans.model-" + System.currentTimeMillis()
-    //model.save(sc, modelSaveString)
+    val modelSaveString = "models/logreg.model-" + System.currentTimeMillis()
+    savableModel.save(modelSaveString)
 
     //println( model.toPMML() )
     sc.stop()
   }
 
-  def protectSanity = {
+  def predictFromStream(negativeAction : () => Int,
+                        positiveAction : () => Int) = {
+
+    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+    val modelPath = "models/logreg.model-1474225317257"
+    val model = LogisticRegressionModel.load(modelPath)
+
     val lines = ssc.socketTextStream("10.1.2.230", 9999)
+    Logger.getRootLogger().setLevel(Level.ERROR)
 
-    val words = lines.flatMap(_.split(" "))
+    val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
 
-    val pairs = words.map(word => (word, 1))
-    val wordCounts = pairs.reduceByKey(_ + _)
+    meanByKey.foreachRDD { mbk =>
 
-    wordCounts.print()
+      val predictData = (0.0, Vectors.dense( mbk.map(_._2).take( frequenciesInWindow ) ))
+
+      val sz = predictData._2.size
+      if(sz == frequenciesInWindow) {
+        val predictPointsDF = sqlContext.createDataFrame(Seq(predictData)).toDF("DO_NOT_USE", "rawfeatures")
+        val scaler = new StandardScaler()
+          .setInputCol("rawfeatures")
+          .setOutputCol("features")
+          .setWithStd(true)
+          .setWithMean(false)
+
+        val scalerModel = scaler.fit(predictPointsDF)
+        val transformedData = scalerModel.transform(predictPointsDF)
+
+        val predictLabelAndRaw = model.transform(transformedData)
+          .select("rawPrediction", "prediction")
+          .map {
+            case Row(rawPrediction: Vector, prediction: Double) => (prediction, rawPrediction)
+          }
+        predictLabelAndRaw.foreach(println)
+        val prediction = predictLabelAndRaw.first()._1
+        println("prediction: ---- " + prediction + " ----")
+        if(prediction == 0) negativeAction() else positiveAction()
+      } else {
+        println("cannot predict, vector size not 2048: " + sz)
+      }
+    }
 
     ssc.start()
     ssc.awaitTermination()  // Wait for the computation to terminate
     sc.stop()
-  }
-
-  def predictFromStream(negativeAction : () => Int,
-                        positiveAction : () => Int) = {
-    //val modelPath = "models/kmeans.model-1473003588743"
-    //val model = KMeansModel.load(sc, modelPath)
-
-    //val lines = ssc.socketTextStream("10.1.2.230", 9999)
-    //Logger.getRootLogger().setLevel(Level.ERROR)
-
-    //val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
-    //meanByKey.foreachRDD { mbk =>
-      //val vec = Vectors.dense( mbk.map(_._2).take( frequenciesInWindow ) )
-      //if(vec.size == frequenciesInWindow) {
-        //val prediction = model.predict(vec)
-        //println("prediction: ---- " + prediction + " ----")
-        //if(prediction == 0) negativeAction() else positiveAction()
-      //} else {
-        //print("not 2048: ")
-        //print(vec.size)
-      //}
-      //println()
-    //}
-
-    //ssc.start()
-    //ssc.awaitTermination()  // Wait for the computation to terminate
-    //sc.stop()
   }
 }
