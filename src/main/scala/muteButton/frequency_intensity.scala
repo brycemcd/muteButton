@@ -72,8 +72,11 @@ object FrequencyIntensityRDD extends FrequencyIntensity[
 
 object FrequencyIntensityStream {
   def mapFileToFreqIntensityList(fileContents : DStream[String]) = {
-    fileContents.map(_.split("  ")).filter(_.length == 2).map {
-      case tup : Array[String] => (tup(0).toDouble, (tup(1).toDouble, 1))
+    val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
+
+    fileContents.flatMap {
+        case freqIntensLines(freq, intense) => Some( (freq.toDouble, (intense.toDouble, 1) ))
+        case _ => None
     }.reduceByKey {
       (a : (Double, Int), v : (Double, Int)) => (a._1 + v._1, a._2 + v._2)
     }
