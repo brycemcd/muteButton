@@ -59,9 +59,9 @@ object Main {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
-    //trainOfflineModel()
-    predictFromStream( PredictionAction.negativeCase,
-                       PredictionAction.positiveCase)
+    trainOfflineModel()
+    //predictFromStream( PredictionAction.negativeCase,
+                       //PredictionAction.positiveCase)
     //getFreqs()
   }
   private def generateModelParams : Seq[SGDModelParams] = {
@@ -75,112 +75,7 @@ object Main {
     // Loads data.
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
-    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
-    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt")
-    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt")
-
-    //println("training ad lines " + trainAdLines.count())
-    //println("training game lines " + trainGameLines.count())
-
-    val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
-    val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
-
-    //println("training ad touples " + trainAdTouples.count())
-    //println("training game touples " + trainGameTouples.count())
-
-
-    // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
-    // NOTE: There's a slight risk that frequencies and intensity examples will
-    // get mixed up when this is distributed across a cluster
-
-    val trainAdPoints = trainAdTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      (1.0, Vectors.dense( x.map(_._2) ))
-    }
-
-
-    val trainGamePoints = trainGameTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      (0.0, Vectors.dense( x.map(_._2) ))
-    }
-
-
-    //println("training ad points " + trainAdPoints.count())
-    //println("training game points " + trainGamePoints.count())
-
-    val allPoints = trainGamePoints.union(trainAdPoints)
-    val allPointsDF = sqlContext.createDataFrame(allPoints)
-                                  .toDF("label", "rawfeatures")
-
-    val scaler = new StandardScaler()
-      .setInputCol("rawfeatures")
-      .setOutputCol("features")
-      .setWithStd(true)
-      .setWithMean(false)
-
-    val scalerModel = scaler.fit(allPointsDF)
-    val transformedData = scalerModel.transform(allPointsDF)
-
-    val splits = transformedData.randomSplit(Array(0.8, 0.2), seed = 11L)
-    val training = splits(0).cache()
-    val test = splits(1).cache()
-
-    // header:
-    println("regParam, iterations, f1, precision, recall")
-    //generateModelParams.map { modelParam =>
-      //println(s"fitting new model with $modelParam")
-
-      // TODO: this is the new one
-      val lr = new LogisticRegression()
-        .setMaxIter(3000)
-        .setFeaturesCol("features")
-
-      val paramGrid = new ParamGridBuilder()
-        .addGrid(lr.regParam, Array(0.1, 0.01))
-        .addGrid(lr.elasticNetParam, Array(0.0, 0.5, 1.0))
-        .build()
-
-      //val evaluator = new BinaryClassificationEvaluator()
-                          //.setMetricName("areaUnderPR")
-      val evaluator = new MulticlassClassificationEvaluator()
-
-      val trainValidationSplit = new TrainValidationSplit()
-        .setEstimator(lr)
-        .setEvaluator(evaluator)
-        .setEstimatorParamMaps(paramGrid)
-        .setTrainRatio(0.8)
-
-
-      val model = trainValidationSplit.fit(training)
-
-
-      val savableModel = lr.fit(training, model.bestModel.extractParamMap)
-
-      println("best model: " + model.bestModel)
-
-      // TODO: print metrics to model tuning
-      //val trainingSummary = model.summary
-      //val objectiveHistory = trainingSummary.objectiveHistory
-      //val modelLog = "log/training-" + reg + "-" + System.currentTimeMillis()
-      //objectiveHistory.foreach { loss =>
-        //scala.tools.nsc.io.File(modelLog).appendAll(loss.toString + "\n")
-      //}
-
-      val predictionAndLabel = model.transform(test)
-        .select("label", "rawPrediction", "prediction")
-        .map {
-          case Row(label: Double, rawPrediction: Vector, prediction: Double) => (label, prediction)
-        }
-      val metrics = new MulticlassMetrics(predictionAndLabel)
-      //println(modelParam.regParam + "," + modelParam.numIterations + "," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
-      println("0.1,3000," + metrics.fMeasure + "," + metrics.precision + "," + metrics.recall)
-    //}
-
-    //println("training all points " + allPoints.count())
-
-
-    val modelSaveString = "models/logreg.model-" + System.currentTimeMillis()
-    savableModel.save(modelSaveString)
-
-    //println( model.toPMML() )
+    new LogRegModel(sc).trainModelsWithVaryingM()
     sc.stop()
   }
 
