@@ -5,13 +5,14 @@ import org.apache.spark.SparkContext._
 
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.DataFrame
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.mllib.linalg.Vectors
 
 import org.apache.spark.ml.feature.StandardScaler
-import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.classification.{LogisticRegression, LogisticRegressionModel}
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit, TrainValidationSplitModel}
 import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
 import org.apache.spark.ml.param.ParamPair
@@ -30,17 +31,17 @@ object LogRegModel {
 }
 
 class LogRegModel(
-  sc: SparkContext
+  sc: SparkContext,
+  devEnv: Boolean = true
 ) {
 
   lazy private val sqlContext = new SQLContext(sc)
 
   private def deriveAllPointsFromLabeledFreqs(sc : SparkContext) : RDD[(Double, Vector)] = {
-    //val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt")
-    //val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt")
-    val trainAdLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt")
-    val trainGameLines = sc.textFile("/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt")
-
+    val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt"
+    val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt"
+    val trainAdLines = sc.textFile(adfile)
+    val trainGameLines = sc.textFile(gamefile)
     //println("training ad lines " + trainAdLines.count())
     //println("training game lines " + trainGameLines.count())
 
@@ -90,7 +91,10 @@ class LogRegModel(
     // create an RDD of training points
     val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
     val logName = "log/training-" + System.currentTimeMillis()
-    for(m <- (100 to 10000 by 200)) {
+
+    //for(m <- (500 to 10000 by 500)) {
+    val rangeAndStep = if(devEnv) (100 to 100 by 100) else (10000 to 10000 by 500)
+    for(m <- rangeAndStep) {
       val somePoints = sc.parallelize( allPoints.takeSample(false, m, seed) )
       trainOfflineModel(somePoints, m, logName)
     }
@@ -102,9 +106,10 @@ class LogRegModel(
 
     val transformedData = transformToTraining(allPoints, sqlContext)
 
-    val splits = transformedData.randomSplit(Array(0.8, 0.2), seed = 11L)
+    val splits = transformedData.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
     val training = splits(0).cache()
-    val test = splits(1).cache()
+    val crossVal = splits(1).cache()
+    val test = splits(2).cache()
 
     // header:
     //println("regParam, iterations, f1, precision, recall")
@@ -113,29 +118,60 @@ class LogRegModel(
       .setMaxIter(3000)
       .setFeaturesCol("features")
 
+    val lotsofRegParams = (1 to 30).foldLeft(Array[Double](10)) { (acc, n) => acc :+ (acc.last/1.5) }
     val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, Array(0.1, 0.01, 0.01))
-      .addGrid(lr.elasticNetParam, Array(0.0, 0.5, 1.0))
+      .addGrid(lr.regParam, lotsofRegParams)
+      .addGrid(lr.elasticNetParam, Array(0.0))
       .build()
 
     //val evaluator = new BinaryClassificationEvaluator()
     //.setMetricName("areaUnderPR")
     val evaluator = new MulticlassClassificationEvaluator()
 
-    val trainValidationSplit = new TrainValidationSplit()
-      .setEstimator(lr)
-      .setEvaluator(evaluator)
-      .setEstimatorParamMaps(paramGrid)
-      .setTrainRatio(0.8)
+    //val trainValidationSplit = new TrainValidationSplit()
+      //.setEstimator(lr)
+      //.setEvaluator(evaluator)
+      //.setEstimatorParamMaps(paramGrid)
+      //.setTrainRatio(0.8)
 
 
-    val model = trainValidationSplit.fit(training)
-    printModelMetrics(training.count, model, logName)
-    val savableModel = lr.fit(training, model.bestModel.extractParamMap)
-    val metric = evaluator.evaluate(model.bestModel.transform(training, model.bestModel.extractParamMap))
-    println(s"metric : $metric")
+    paramGrid.foreach { modelParams =>
+      val model = lr.fit(training, modelParams)
+      val trainingEval = evaluator.evaluate(
+        model.transform(training, modelParams))
+      val cvEval = evaluator.evaluate(
+        model.transform(crossVal, modelParams))
+      printModelMetrics(training.count, trainingEval, cvEval, model, logName)
 
-    val predictionAndLabel = model.transform(test)
+    }
+    //val savableModel = lr.fit(training, model.bestModel.extractParamMap)
+    //val metric = evaluator.evaluate(model.bestModel.transform(training, model.bestModel.extractParamMap))
+    //println(s"metric : $metric")
+
+  }
+
+  def printModelMetrics(m : Long, trainingEval : Double, cvEval : Double, model : LogisticRegressionModel, appendFileName : String = "") = {
+    //model.bestModel.summary.objectiveHistory.foreach(println)
+    val first = Array[String](m.toString,
+                              trainingEval.toString,
+                              cvEval.toString,
+                              model.summary.objectiveHistory.length.toString)
+
+    // TODO: just get this from the paramGrid later
+    val interestingParams = Array[String]("elasticNetParam", "regParam")
+    val params = model.extractParamMap().toSeq.map {
+      case pp : ParamPair[_] => (pp.param.name, pp.value)
+    }.filter( interestingParams contains _._1 ).sortBy(_._1)
+    .foldLeft(first) { (acc, n) => acc :+ n._1 + "," + n._2 }
+
+    val strToWrite = params.mkString(",")
+    if(appendFileName != "") scala.tools.nsc.io.File(appendFileName).appendAll(strToWrite + "\n")
+    println(strToWrite)
+  }
+
+  def modelEvaluation(model : TrainValidationSplitModel, testSet : DataFrame) = {
+
+    val predictionAndLabel = model.transform(testSet)
       .select("label", "rawPrediction", "prediction")
       .map {
         case Row(label: Double, rawPrediction: Vector, prediction: Double) => (label, prediction)
@@ -146,21 +182,6 @@ class LogRegModel(
 
       //println( model.toPMML() )
   }
-
-  def printModelMetrics(m : Long, model : TrainValidationSplitModel, appendFileName : String = "") = {
-    //model.bestModel.summary.objectiveHistory.foreach(println)
-    for(i <- (0 to model.getEstimatorParamMaps.length - 1)) {
-      val first = Array[String](m.toString, model.validationMetrics(i).toString)
-      val params = model.getEstimatorParamMaps(i).toSeq.map {
-        case pp : ParamPair[_] => (pp.param.name, pp.value)
-      }.foldLeft(first) { (acc, n) => acc :+ n._1 + "," + n._2 }
-
-      val strToWrite = params.mkString(",")
-      if(appendFileName != "") scala.tools.nsc.io.File(appendFileName).appendAll(strToWrite + "\n")
-      println(strToWrite)
-    }
-  }
-
   def persistModel(model : TrainValidationSplitModel) = {
       //val savableModel = lr.fit(training, model.bestModel.extractParamMap)
       //val modelSaveString = "models/logreg.model-" + System.currentTimeMillis()

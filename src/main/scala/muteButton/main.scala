@@ -47,6 +47,7 @@ object Main {
   lazy val conf = new SparkConf()
     .setAppName("muteButton")
     .setMaster("local[*]")
+    .set("spark.network.timeout", "240")
 
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
@@ -75,7 +76,7 @@ object Main {
     // Loads data.
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
-    new LogRegModel(sc).trainModelsWithVaryingM()
+    new LogRegModel(sc, false).trainModelsWithVaryingM()
     sc.stop()
   }
 

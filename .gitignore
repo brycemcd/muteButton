@@ -4,3 +4,7 @@ derby.log
 models/
 conf/
 log/
+
+# jupyter notebook
+.ipynb_checkpoints/
+data/
