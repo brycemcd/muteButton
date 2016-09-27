@@ -11,7 +11,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.mllib.linalg.Vectors
 
-import org.apache.spark.ml.feature.StandardScaler
+import org.apache.spark.ml.{Pipeline, PipelineModel}
+import org.apache.spark.ml.feature.{StandardScaler, PolynomialExpansion}
 import org.apache.spark.ml.classification.{LogisticRegression, LogisticRegressionModel}
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit, TrainValidationSplitModel}
 import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
@@ -72,19 +73,49 @@ class LogRegModel(
     trainGamePoints.union(trainAdPoints)
   }
 
-  def transformToTraining(allPoints: RDD[(Double, Vector)], sqlContext: SQLContext) = {
+  def scaleFeatures(allPoints: RDD[(Double, Vector)],
+                          sqlContext: SQLContext,
+                          scaledColumnName : String) = {
 
     val allPointsDF = sqlContext.createDataFrame(allPoints)
       .toDF("label", "rawfeatures")
 
     val scaler = new StandardScaler()
       .setInputCol("rawfeatures")
-      .setOutputCol("features")
+      .setOutputCol(scaledColumnName)
       .setWithStd(true)
       .setWithMean(false)
 
     val scalerModel = scaler.fit(allPointsDF)
     scalerModel.transform(allPointsDF)
+  }
+
+  def transformToTraining(allPoints: RDD[(Double, Vector)],
+                          sqlContext: SQLContext) = {
+
+    scaleFeatures(allPoints, sqlContext, "features")
+  }
+
+  // TODO - use a pipeline instead here
+  def transformToTrainingForPoly(polyDegree: Int)(allPoints: RDD[(Double, Vector)], sqlContext: SQLContext) = {
+    val scaled = scaleFeatures(allPoints, sqlContext, "scaledFeatures")
+
+    val polynomialExpansion = new PolynomialExpansion()
+      .setInputCol("scaledFeatures")
+      .setOutputCol("features")
+      .setDegree(polyDegree)
+      .transform(scaled)
+    polynomialExpansion
+  }
+
+  def trainModelsWithVaryingPoly(seed : Long = 11L) = {
+    val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+    val logName = "log/training-poly-" + System.currentTimeMillis()
+
+    val poly = if(devEnv) (2 to 2) else (2 to 8)
+    for(p <- poly) {
+      trainOfflineModel(allPoints,transformToTrainingForPoly(p), 25, logName)
+    }
   }
 
   def trainModelsWithVaryingM(seed : Long = 11L) = {
@@ -96,15 +127,18 @@ class LogRegModel(
     val rangeAndStep = if(devEnv) (100 to 100 by 100) else (10000 to 10000 by 500)
     for(m <- rangeAndStep) {
       val somePoints = sc.parallelize( allPoints.takeSample(false, m, seed) )
-      trainOfflineModel(somePoints, m, logName)
+      trainOfflineModel(somePoints,transformToTraining, m, logName)
     }
   }
 
-  def trainOfflineModel(allPoints: RDD[(Double, Vector)], m : Int = 100, logName : String = "") = {
+  def trainOfflineModel(allPoints: RDD[(Double, Vector)],
+                        transformationFx : (RDD[(Double, Vector)], SQLContext) => DataFrame,
+                        m : Int = 100, // TODO: can this be removed
+                        logName : String = "") = {
     //allPoints.saveAsTextFile("hdfs://spark3.thedevranch.net/football/allTrainingPoints")
     // read previously created points
 
-    val transformedData = transformToTraining(allPoints, sqlContext)
+    val transformedData = transformationFx(allPoints, sqlContext)
 
     val splits = transformedData.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
     val training = splits(0).cache()
@@ -118,7 +152,8 @@ class LogRegModel(
       .setMaxIter(3000)
       .setFeaturesCol("features")
 
-    val lotsofRegParams = (1 to 30).foldLeft(Array[Double](10)) { (acc, n) => acc :+ (acc.last/1.5) }
+    val regRange = if(devEnv) (1 to 5) else (1 to 30)
+    val lotsofRegParams = regRange.foldLeft(Array[Double](10)) { (acc, n) => acc :+ (acc.last/1.5) }
     val paramGrid = new ParamGridBuilder()
       .addGrid(lr.regParam, lotsofRegParams)
       .addGrid(lr.elasticNetParam, Array(0.0))

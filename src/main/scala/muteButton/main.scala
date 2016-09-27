@@ -76,7 +76,7 @@ object Main {
     // Loads data.
     // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
     // for training prepared data
-    new LogRegModel(sc, false).trainModelsWithVaryingM()
+    new LogRegModel(sc, true).trainModelsWithVaryingPoly()
     sc.stop()
   }
 
