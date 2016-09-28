@@ -2,7 +2,7 @@
 
 #for i in $(seq -s "  " -w 21 30); do
 
-fs=$(ssh spark4.thedevranch.net "ls /media/brycemcd/filestore/spark2bkp/football/*chunked*wav")
+fs=$(ssh spark4.thedevranch.net "ls /media/brycemcd/filestore/spark2bkp/football/unsupervised/*chunked*wav")
 
 for f in $fs; do
   base="/media/brycemcd/filestore/spark2bkp/football"

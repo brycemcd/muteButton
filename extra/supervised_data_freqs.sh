@@ -6,9 +6,11 @@ basedir=/media/brycemcd/filestore/spark2bkp/football/supervised_samples
 
 catArr=(game ad)
 for c in ${catArr[@]}; do
-  gameFiles=$(ls $basedir/$cat/*.wav)
+  echo "entering category $c"
+  gameFiles=$(ls $basedir/$c/*.wav)
 
   for f in $gameFiles; do
+    echo "analyzing $f"
     filename=$(basename "$f")
     extension="${filename##*.}"
     filename="${filename%.*}"

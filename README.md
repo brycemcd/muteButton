@@ -108,28 +108,26 @@ Can be used to playback the 10 second snippets at a playback speed of 3x. Key
 commands then move the files into positive and negative example directories
 on the source system.
 
-After a number of training examples have been produced, frequency/intensity
-data can be extracted by running the following sox command:
+After a number of training examples have been produced, the audio sample should
+be extracted into frequency/intensity data files. This can be done with `./extra/supervised_data_freqs.sh`
 
-`sox /path/to/positive_examples/*.wav -p | sox - -n remix 1,2 stat -freq 2>positive_frequencies.txt`
-
-This positive_frequencies.txt file can be read in to the learner using a slightly
+These data files can be read in to the learner using a slightly
 modified code path. It's the same data, but not streamed over a socket. Each
 set of frequencies can be vectorized and labeled.
 
-Each sample needs to be labeled in order to ensure that when the data is read
-in and distributed across the cluster that is is combined correctly when it's
+Each file has multiple audio samples included.  Each sample needs to be
+labeled in order to ensure that when the data is read
+in and distributed across the cluster that it is combined correctly when it's
 vectorized as a training sample. The easiest way I've found to do this as of now
 is to separate each sample into its own file and then add a third column to each file
 with its filename. When the training routine runs, it will group each frequency
 intensity touple together by its filename and output the correct vector.
 
-Split the file with a prefix of 'freq': `split game_freqs.txt -l 2048 freq`
+To label each freq/intensity file so it's suitable for training, run the
+`extra/split_training_freqs.sh` command.
 
-Add the filename as a column: `for f in freqa*; do sed -i "s:$:  $f:" $f; done`
-
-At this point, it's probably safe to recombine the files into one again but
-I haven't tried this.
+At this point, all the `*-labeled` files can be recombined into a single labeled
+data file. This is helpful to reduce disk I/O during the training phase.
 
 ## Testing The System
 
