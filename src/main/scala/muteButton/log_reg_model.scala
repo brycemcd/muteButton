@@ -112,9 +112,12 @@ class LogRegModel(
     val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
     val logName = "log/training-poly-" + System.currentTimeMillis()
 
+      val somePoints = sc.parallelize( allPoints.takeSample(false, 250, seed) )
+      somePoints.cache()
+
     val poly = if(devEnv) (2 to 2) else (2 to 8)
     for(p <- poly) {
-      trainOfflineModel(allPoints,transformToTrainingForPoly(p), 25, logName)
+      trainOfflineModel(somePoints,transformToTrainingForPoly(p), 25, "")
     }
   }
 
