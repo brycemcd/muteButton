@@ -39,8 +39,8 @@ class LogRegModel(
   lazy private val sqlContext = new SQLContext(sc)
 
   private def deriveAllPointsFromLabeledFreqs(sc : SparkContext) : RDD[(Double, Vector)] = {
-    val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/*-labeled.txt"
-    val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/*-labeled.txt"
+    val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/all-labeled.txt"
+    val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/all-labeled.txt"
     val trainAdLines = sc.textFile(adfile)
     val trainGameLines = sc.textFile(gamefile)
     //println("training ad lines " + trainAdLines.count())
@@ -132,6 +132,14 @@ class LogRegModel(
       val somePoints = sc.parallelize( allPoints.takeSample(false, m, seed) )
       trainOfflineModel(somePoints,transformToTraining, m, logName)
     }
+  }
+
+  def trainModelWithAllData() = {
+    val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+    val logName = "log/training-" + System.currentTimeMillis()
+
+    println("total training samples: " + allPoints.count())
+    trainOfflineModel(allPoints, transformToTraining, 10, logName)
   }
 
   def trainOfflineModel(allPoints: RDD[(Double, Vector)],

@@ -73,10 +73,7 @@ object Main {
   }
 
   def trainOfflineModel() = {
-    // Loads data.
-    // NOTE that freq is a somewhat "magic" (now conventional ;) ) prepend string
-    // for training prepared data
-    new LogRegModel(sc, true).trainModelsWithVaryingPoly()
+    new LogRegModel(sc, true).trainModelWithAllData()
     sc.stop()
   }
 
