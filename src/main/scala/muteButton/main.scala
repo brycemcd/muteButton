@@ -46,7 +46,7 @@ object Main {
 
   lazy val conf = new SparkConf()
     .setAppName("muteButton")
-    .setMaster("local[*]")
+    //.setMaster("local[*]")
     .set("spark.network.timeout", "240")
 
   lazy val sc = new SparkContext(conf)
@@ -73,7 +73,7 @@ object Main {
   }
 
   def trainOfflineModel() = {
-    new LogRegModel(sc, true).trainModelWithAllData()
+    new LogRegModel(sc, false).trainModelsWithVaryingM()
     sc.stop()
   }
 

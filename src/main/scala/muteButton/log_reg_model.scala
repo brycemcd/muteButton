@@ -16,7 +16,7 @@ import org.apache.spark.ml.feature.{StandardScaler, PolynomialExpansion}
 import org.apache.spark.ml.classification.{LogisticRegression, LogisticRegressionModel}
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit, TrainValidationSplitModel}
 import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
-import org.apache.spark.ml.param.ParamPair
+import org.apache.spark.ml.param.{ParamPair, ParamMap}
 
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
 
@@ -39,8 +39,8 @@ class LogRegModel(
   lazy private val sqlContext = new SQLContext(sc)
 
   private def deriveAllPointsFromLabeledFreqs(sc : SparkContext) : RDD[(Double, Vector)] = {
-    val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/all-labeled.txt"
-    val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/all-labeled.txt"
+    val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/ad/all-labeled.txt"
+    val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/game/all-labeled.txt"
     val trainAdLines = sc.textFile(adfile)
     val trainGameLines = sc.textFile(gamefile)
     //println("training ad lines " + trainAdLines.count())
@@ -108,50 +108,98 @@ class LogRegModel(
     polynomialExpansion
   }
 
-  def trainModelsWithVaryingPoly(seed : Long = 11L) = {
-    val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
-    val logName = "log/training-poly-" + System.currentTimeMillis()
+  //def trainModelsWithVaryingPoly(seed : Long = 11L) = {
+    //val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+    //val logName = "log/training-poly-" + System.currentTimeMillis()
 
-      val somePoints = sc.parallelize( allPoints.takeSample(false, 250, seed) )
-      somePoints.cache()
+      //val somePoints = sc.parallelize( allPoints.takeSample(false, 250, seed) )
+      //somePoints.cache()
 
-    val poly = if(devEnv) (2 to 2) else (2 to 8)
-    for(p <- poly) {
-      trainOfflineModel(somePoints,transformToTrainingForPoly(p), 25, "")
-    }
-  }
+    //val poly = if(devEnv) (2 to 2) else (2 to 8)
+    //for(p <- poly) {
+      //trainOfflineModel(somePoints,transformToTrainingForPoly(p), 25, "")
+    //}
+  //}
 
+  val logName = "log/training-" + System.currentTimeMillis()
+  val byTenPercentIncrements = (.10 to 1 by .10)
   def trainModelsWithVaryingM(seed : Long = 11L) = {
+    def calcM(allPointsCount : Long) : scala.collection.immutable.Range = {
+      val tenPer = (allPointsCount * 0.10).toInt
+      (tenPer to allPointsCount.toInt by tenPer)
+    }
     // create an RDD of training points
     val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
     val logName = "log/training-" + System.currentTimeMillis()
 
-    //for(m <- (500 to 10000 by 500)) {
-    val rangeAndStep = if(devEnv) (100 to 100 by 100) else (10000 to 10000 by 500)
-    for(m <- rangeAndStep) {
-      val somePoints = sc.parallelize( allPoints.takeSample(false, m, seed) )
-      trainOfflineModel(somePoints,transformToTraining, m, logName)
+    val allPointsCount = allPoints.count()
+
+    println("all points: " + allPointsCount)
+    val transformedData = transformToTraining(allPoints, sqlContext).cache()
+
+    val rangeAndStep = if(devEnv) (100 to 100 by 100) else calcM(allPointsCount)
+    for(m <- byTenPercentIncrements) {
+      val somePoints = transformedData.sample(false, m, seed)
+      trainOfflineModel(somePoints, transformToTraining, logName)
     }
   }
 
-  def trainModelWithAllData() = {
-    val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
-    val logName = "log/training-" + System.currentTimeMillis()
+  //def trainModelWithAllData() = {
+    //val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+    //val logName = "log/training-" + System.currentTimeMillis()
 
-    println("total training samples: " + allPoints.count())
-    trainOfflineModel(allPoints, transformToTraining, 10, logName)
+    //println("total training samples: " + allPoints.count())
+    //trainOfflineModel(allPoints, transformToTraining, 10, logName)
+  //}
+
+  def trainOfflineModel(allPoints: DataFrame,
+                        transformationFx : (RDD[(Double, Vector)], SQLContext) => DataFrame,
+                        logName : String = "") = {
+
+    val splits = allPoints.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
+    val training = splits(0).cache()
+    val crossVal = splits(1).cache()
+    val test = splits(2).cache()
+
+    val regRange = if(devEnv) (1 to 5) else (1 to 30)
+    val lotsofRegParams = regRange.foldLeft(Array[Double](10)) { (acc, n) => acc :+ (acc.last/1.5) }
+
+    val lr = new LogisticRegression()
+      .setMaxIter(3000)
+      .setFeaturesCol("features")
+
+    val paramGrid = new ParamGridBuilder()
+      .addGrid(lr.regParam, lotsofRegParams)
+      .addGrid(lr.elasticNetParam, Array(0.0))
+      .build()
+
+    paramGrid.foreach { modelParam => runTrainingAndCV(lr, modelParam, training, crossVal) }
   }
 
-  def trainOfflineModel(allPoints: RDD[(Double, Vector)],
+  def runTrainingAndCV(lr : LogisticRegression, modelParams : ParamMap, trainingData : DataFrame, cvData : DataFrame) = {
+      //val evaluator = new BinaryClassificationEvaluator()
+      //.setMetricName("areaUnderPR")
+      val evaluator = new MulticlassClassificationEvaluator()
+
+      val model = lr.fit(trainingData, modelParams)
+      val trainingEval = evaluator.evaluate(
+        model.transform(trainingData, modelParams))
+      val cvEval = evaluator.evaluate(
+        model.transform(cvData, modelParams))
+      printModelMetrics(trainingData.count, trainingEval, cvEval, model, logName)
+  }
+
+  def trainOfflineModelAG(allPoints: DataFrame,
                         transformationFx : (RDD[(Double, Vector)], SQLContext) => DataFrame,
                         m : Int = 100, // TODO: can this be removed
                         logName : String = "") = {
     //allPoints.saveAsTextFile("hdfs://spark3.thedevranch.net/football/allTrainingPoints")
     // read previously created points
 
-    val transformedData = transformationFx(allPoints, sqlContext)
+    //val transformedData = transformationFx(allPoints, sqlContext)
 
-    val splits = transformedData.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
+
+    val splits = allPoints.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
     val training = splits(0).cache()
     val crossVal = splits(1).cache()
     val test = splits(2).cache()
@@ -172,7 +220,6 @@ class LogRegModel(
 
     //val evaluator = new BinaryClassificationEvaluator()
     //.setMetricName("areaUnderPR")
-    val evaluator = new MulticlassClassificationEvaluator()
 
     //val trainValidationSplit = new TrainValidationSplit()
       //.setEstimator(lr)
@@ -181,6 +228,7 @@ class LogRegModel(
       //.setTrainRatio(0.8)
 
 
+    val evaluator = new MulticlassClassificationEvaluator()
     paramGrid.foreach { modelParams =>
       val model = lr.fit(training, modelParams)
       val trainingEval = evaluator.evaluate(
