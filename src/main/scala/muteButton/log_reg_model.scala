@@ -52,20 +52,8 @@ class LogRegModel(
     //println("training ad touples " + trainAdTouples.count())
     //println("training game touples " + trainGameTouples.count())
 
-
-    // NOTE: I should start with a collection of (filename, (freq, intensity)) tuples
-    // NOTE: There's a slight risk that frequencies and intensity examples will
-    // get mixed up when this is distributed across a cluster
-
-    val trainAdPoints = trainAdTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      (1.0, Vectors.dense( x.map(_._2) ))
-    }
-
-
-    val trainGamePoints = trainGameTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
-      (0.0, Vectors.dense( x.map(_._2) ))
-    }
-
+    val trainAdPoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainAdTouples, 1.0)
+    val trainGamePoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainGameTouples, 0.0)
 
     println("training ad points " + trainAdPoints.count())
     println("training game points " + trainGamePoints.count())
@@ -89,6 +77,7 @@ class LogRegModel(
       .setWithMean(false)
 
     val scalerModel = scaler.fit(allPointsDF)
+    scalerModel.save("models/scalerModel")
     scalerModel.transform(allPointsDF)
   }
 
@@ -162,7 +151,8 @@ class LogRegModel(
     val crossVal = splits(1).cache()
     val test = splits(2).cache()
 
-    val regRange = if(devEnv) (1 to 5) else (1 to 30)
+    // Good regParams for this model: Array[Double](0.0001, 0.0005, 0.001)
+    val regRange = if(devEnv) (1 to 2) else (1 to 30)
     val lotsofRegParams = regRange.foldLeft(Array[Double](10)) { (acc, n) => acc :+ (acc.last/1.5) }
 
     val lr = new LogisticRegression()
@@ -170,7 +160,7 @@ class LogRegModel(
       .setFeaturesCol("features")
 
     val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, Array[Double](0.0001, 0.0005, 0.001) )
+      .addGrid(lr.regParam, lotsofRegParams)
       .addGrid(lr.elasticNetParam, Array(0.0))
       .build()
 
@@ -185,6 +175,8 @@ class LogRegModel(
       //val evaluator = new MulticlassClassificationEvaluator()
 
       val model = lr.fit(trainingData, modelParams)
+      // TODO move this out of here
+      // persistModel(model)
       val trainingEval = evaluator.evaluate(
         model.transform(trainingData, modelParams))
       val cvEval = evaluator.evaluate(
@@ -224,9 +216,9 @@ class LogRegModel(
 
       //println( model.toPMML() )
   }
-  def persistModel(model : TrainValidationSplitModel) = {
+  def persistModel(model : LogisticRegressionModel) = {
       //val savableModel = lr.fit(training, model.bestModel.extractParamMap)
-      //val modelSaveString = "models/logreg.model-" + System.currentTimeMillis()
-      //savableModel.save(modelSaveString)
+      val modelSaveString = "models/logreg.model-" + System.currentTimeMillis()
+      model.save(modelSaveString)
   }
 }

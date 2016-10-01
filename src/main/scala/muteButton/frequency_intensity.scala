@@ -3,6 +3,7 @@ package muteButton
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.streaming.dstream.ReceiverInputDStream
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming._
@@ -14,36 +15,25 @@ import org.apache.log4j.Level
 // A = RDD, B =    for reading files
 package object NewTypes {
   type FreqIntensities = (Double, (Double, Int))
+  type LabeledFreqIntens = (String, (Double, Double))
 }
 
 import muteButton.NewTypes._
 import scala.util.matching.Regex
 
-trait FrequencyIntensity [
-  A,
-  B,
-  C
-] {
-  def mapFileToFreqIntensityList(fileContents : A) : B
-
-
-
-  def meanFrequencyIntensities(freqTuple : B) : C
-
-
-}
-
-object FrequencyIntensityRDD extends FrequencyIntensity[
-  RDD[String],
-  RDD[FreqIntensities],
-  RDD[(Double, Double)]
-] {
-  def mapFileToFreqTrainingIntensity(fileContents : RDD[String]) = {
+object FrequencyIntensityRDD {
+  def mapFileToLabeledFreqIntensity(fileContents : RDD[String]) = {
     val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})  (.*freqs.*)""".r
 
     fileContents.flatMap {
         case freqIntensLines(freq, intense, seqNum) => Some( (seqNum, (freq.toDouble, intense.toDouble)) )
         case _ => None
+    }
+  }
+
+  def convertFreqIntensToLabeledPoint(labeledTouples : RDD[LabeledFreqIntens], label : Double) = {
+    labeledTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
+      (label, Vectors.dense( x.map(_._2) ))
     }
   }
 
@@ -66,7 +56,7 @@ object FrequencyIntensityRDD extends FrequencyIntensity[
     //meanFrequencyIntensities(
       //mapFileToFreqIntensityList(fileContents)
     //)
-    mapFileToFreqTrainingIntensity(fileContents)
+    mapFileToLabeledFreqIntensity(fileContents)
   }
 }
 
