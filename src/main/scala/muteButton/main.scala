@@ -46,7 +46,7 @@ object Main {
 
   lazy val conf = new SparkConf()
     .setAppName("muteButton")
-    //.setMaster("local[*]")
+    .setMaster("local[*]")
     .set("spark.network.timeout", "240")
 
   lazy val sc = new SparkContext(conf)
@@ -64,6 +64,9 @@ object Main {
     //predictFromStream( PredictionAction.negativeCase,
                        //PredictionAction.positiveCase)
     //getFreqs()
+    val lrm = new LogRegModel(sc, false)
+    //lrm.outputPointCount(sc)
+    println("done")
   }
   private def generateModelParams : Seq[SGDModelParams] = {
     // NOTE: I couldn't find in my notes if these were sensible defaults

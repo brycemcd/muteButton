@@ -67,11 +67,13 @@ class LogRegModel(
     }
 
 
-    //println("training ad points " + trainAdPoints.count())
-    //println("training game points " + trainGamePoints.count())
+    println("training ad points " + trainAdPoints.count())
+    println("training game points " + trainGamePoints.count())
 
     trainGamePoints.union(trainAdPoints)
   }
+
+  def outputPointCount(sc : SparkContext) = deriveAllPointsFromLabeledFreqs(sc)
 
   def scaleFeatures(allPoints: RDD[(Double, Vector)],
                           sqlContext: SQLContext,
@@ -123,18 +125,17 @@ class LogRegModel(
 
   val logName = "log/training-" + System.currentTimeMillis()
   val byTenPercentIncrements = (.10 to 1 by .10)
+  val byFiftyPercentIncrements = (0.60 to 1 by 0.20)
+  lazy val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+
   def trainModelsWithVaryingM(seed : Long = 11L) = {
     def calcM(allPointsCount : Long) : scala.collection.immutable.Range = {
       val tenPer = (allPointsCount * 0.10).toInt
       (tenPer to allPointsCount.toInt by tenPer)
     }
     // create an RDD of training points
-    val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
-    val logName = "log/training-" + System.currentTimeMillis()
-
     val allPointsCount = allPoints.count()
 
-    println("all points: " + allPointsCount)
     val transformedData = transformToTraining(allPoints, sqlContext).cache()
 
     val rangeAndStep = if(devEnv) (100 to 100 by 100) else calcM(allPointsCount)
@@ -169,7 +170,7 @@ class LogRegModel(
       .setFeaturesCol("features")
 
     val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, lotsofRegParams)
+      .addGrid(lr.regParam, Array[Double](0.0001, 0.0005, 0.001) )
       .addGrid(lr.elasticNetParam, Array(0.0))
       .build()
 
@@ -177,9 +178,11 @@ class LogRegModel(
   }
 
   def runTrainingAndCV(lr : LogisticRegression, modelParams : ParamMap, trainingData : DataFrame, cvData : DataFrame) = {
-      //val evaluator = new BinaryClassificationEvaluator()
-      //.setMetricName("areaUnderPR")
-      val evaluator = new MulticlassClassificationEvaluator()
+      val evaluator = new BinaryClassificationEvaluator()
+        .setMetricName("areaUnderROC")
+        //.setMetricName("areaUnderPR")
+      // TODO - record precision + recall
+      //val evaluator = new MulticlassClassificationEvaluator()
 
       val model = lr.fit(trainingData, modelParams)
       val trainingEval = evaluator.evaluate(
@@ -187,61 +190,6 @@ class LogRegModel(
       val cvEval = evaluator.evaluate(
         model.transform(cvData, modelParams))
       printModelMetrics(trainingData.count, trainingEval, cvEval, model, logName)
-  }
-
-  def trainOfflineModelAG(allPoints: DataFrame,
-                        transformationFx : (RDD[(Double, Vector)], SQLContext) => DataFrame,
-                        m : Int = 100, // TODO: can this be removed
-                        logName : String = "") = {
-    //allPoints.saveAsTextFile("hdfs://spark3.thedevranch.net/football/allTrainingPoints")
-    // read previously created points
-
-    //val transformedData = transformationFx(allPoints, sqlContext)
-
-
-    val splits = allPoints.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
-    val training = splits(0).cache()
-    val crossVal = splits(1).cache()
-    val test = splits(2).cache()
-
-    // header:
-    //println("regParam, iterations, f1, precision, recall")
-
-    val lr = new LogisticRegression()
-      .setMaxIter(3000)
-      .setFeaturesCol("features")
-
-    val regRange = if(devEnv) (1 to 5) else (1 to 30)
-    val lotsofRegParams = regRange.foldLeft(Array[Double](10)) { (acc, n) => acc :+ (acc.last/1.5) }
-    val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, lotsofRegParams)
-      .addGrid(lr.elasticNetParam, Array(0.0))
-      .build()
-
-    //val evaluator = new BinaryClassificationEvaluator()
-    //.setMetricName("areaUnderPR")
-
-    //val trainValidationSplit = new TrainValidationSplit()
-      //.setEstimator(lr)
-      //.setEvaluator(evaluator)
-      //.setEstimatorParamMaps(paramGrid)
-      //.setTrainRatio(0.8)
-
-
-    val evaluator = new MulticlassClassificationEvaluator()
-    paramGrid.foreach { modelParams =>
-      val model = lr.fit(training, modelParams)
-      val trainingEval = evaluator.evaluate(
-        model.transform(training, modelParams))
-      val cvEval = evaluator.evaluate(
-        model.transform(crossVal, modelParams))
-      printModelMetrics(training.count, trainingEval, cvEval, model, logName)
-
-    }
-    //val savableModel = lr.fit(training, model.bestModel.extractParamMap)
-    //val metric = evaluator.evaluate(model.bestModel.transform(training, model.bestModel.extractParamMap))
-    //println(s"metric : $metric")
-
   }
 
   def printModelMetrics(m : Long, trainingEval : Double, cvEval : Double, model : LogisticRegressionModel, appendFileName : String = "") = {
