@@ -20,7 +20,6 @@ import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
-//import sqlContext.implicits._
 import org.apache.spark.ml.feature.StandardScalerModel
 
 import org.apache.log4j.Logger
@@ -62,7 +61,7 @@ object Main {
     Logger.getRootLogger().setLevel(Level.ERROR)
     //protectSanity
     //trainOfflineModel()
-    predictFromStream( PredictionAction.negativeCase, PredictionAction.positiveCase)
+    predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
     //getFreqs()
     val lrm = new LogRegModel(sc, false)
     //lrm.outputPointCount(sc)
@@ -76,14 +75,16 @@ object Main {
   }
 
   def trainOfflineModel() = {
-    new LogRegModel(sc, true).trainModelsWithVaryingM()
+    //new LogRegModel(sc, false).trainModelsWithVaryingM()
+    new LogRegModel(sc, false).trainSingleModel
     sc.stop()
   }
 
   def predictFromStream(negativeAction : () => Int,
-                        positiveAction : () => Int) = {
+                        positiveAction : () => Int,
+                        modelPath: String = "models/logreg.model-1475358050409",
+                        scalerPath: String = "models/scalerModel") = {
 
-    val modelPath = "models/logreg.model-1474225317257"
     // NOTE: I may want to broadcast this
     val model = LogisticRegressionModel.load(modelPath)
 
@@ -101,7 +102,7 @@ object Main {
       if(sz == numberOfFrequenciesCaptured) {
         val predictPointsDF = sqlContext.createDataFrame(Seq(predictData)).toDF("DO_NOT_USE", "rawfeatures")
         // NOTE: this should be created during training
-        val transformedData = StandardScalerModel.load("models/scalerModel").transform(predictPointsDF)
+        val transformedData = StandardScalerModel.load(scalerPath).transform(predictPointsDF)
 
         val predictLabelAndRaw = model.transform(transformedData)
           .select("rawPrediction", "prediction")

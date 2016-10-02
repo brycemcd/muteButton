@@ -134,6 +134,11 @@ class LogRegModel(
     }
   }
 
+  def trainSingleModel = {
+    val transformedData = transformToTraining(allPoints, sqlContext).cache()
+    trainOfflineModel(transformedData, transformToTraining, logName)
+  }
+
   //def trainModelWithAllData() = {
     //val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
     //val logName = "log/training-" + System.currentTimeMillis()
@@ -160,7 +165,7 @@ class LogRegModel(
       .setFeaturesCol("features")
 
     val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, lotsofRegParams)
+      .addGrid(lr.regParam, Array[Double](0.0001))
       .addGrid(lr.elasticNetParam, Array(0.0))
       .build()
 
@@ -176,7 +181,7 @@ class LogRegModel(
 
       val model = lr.fit(trainingData, modelParams)
       // TODO move this out of here
-      // persistModel(model)
+      persistModel(model)
       val trainingEval = evaluator.evaluate(
         model.transform(trainingData, modelParams))
       val cvEval = evaluator.evaluate(
