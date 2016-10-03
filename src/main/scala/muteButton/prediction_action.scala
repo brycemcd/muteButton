@@ -2,10 +2,11 @@ package muteButton
 
 import sys.process._
 object PredictionAction {
-  val negativeCase = () => toggleSystem("neg")
-  val positiveCase = () => toggleSystem("ops")
+  val negativeCase = () => toggleSystem("unmute")
+  val positiveCase = () => toggleSystem("mute")
 
-  private def toggleSystem(soundControl : String) = {
-    "echo '"+soundControl+"'>> predictions" !
+  private def toggleSystem(soundControl : String) : Int = {
+    //"echo '"+soundControl+"'>> predictions" !
+    "sudo amixer set Speaker " + soundControl !
   }
 }

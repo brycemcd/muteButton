@@ -75,9 +75,7 @@ object FrequencyIntensityStream {
   // works for streaming
   def meanFrequencyIntensities(freqTuple : DStream[FreqIntensities]) = {
     freqTuple.map {
-      case (freq, (sum, count)) =>
-        println("count: " + count)
-        (freq, sum * 1/count)
+      case (freq, (sum, count)) => (freq, sum * 1/count)
     }.transform(_.sortByKey(true))
   }
 

@@ -50,7 +50,8 @@ object Main {
 
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
-  lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
+  //lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
+  lazy val ssc = new StreamingContext(sc, new Duration(500) )
   val numberOfFrequenciesCaptured = 2048
   val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
   val sqlContext = new org.apache.spark.sql.SQLContext(sc)
@@ -80,6 +81,7 @@ object Main {
     sc.stop()
   }
 
+  import sqlContext.implicits._
   def predictFromStream(negativeAction : () => Int,
                         positiveAction : () => Int,
                         modelPath: String = "models/logreg.model-1475358050409",
@@ -93,14 +95,17 @@ object Main {
 
     val meanByKey = FrequencyIntensityStream.convertFileContentsToMeanIntensities(lines)
 
+    // FIXME: This is very dangerous
+    val zerosArray = scala.collection.mutable.ArrayBuffer.empty[Double]
     meanByKey.foreachRDD { mbk =>
 
       // FIXME: there must be a better way to make this usable as a dataframe
       val predictData = (3.0, Vectors.dense( mbk.map(_._2).collect ))
+      val predictVec = Vectors.dense( mbk.map(_._2).collect )
 
       val sz = predictData._2.size
       if(sz == numberOfFrequenciesCaptured) {
-        val predictPointsDF = sqlContext.createDataFrame(Seq(predictData)).toDF("DO_NOT_USE", "rawfeatures")
+        val predictPointsDF = sqlContext.createDataFrame(Seq(predictData)).toDF("DONOTUSE", "rawfeatures")
         // NOTE: this should be created during training
         val transformedData = StandardScalerModel.load(scalerPath).transform(predictPointsDF)
 
@@ -109,12 +114,23 @@ object Main {
           .map {
             case Row(rawPrediction: Vector, prediction: Double) => (prediction, rawPrediction)
           }
-        predictLabelAndRaw.foreach(println)
         val prediction = predictLabelAndRaw.first()._1
-        println("prediction: ---- " + prediction + " ----")
-        if(prediction == 0) negativeAction() else positiveAction()
+        //predictLabelAndRaw.foreach(println)
+        //println("prediction: ---- " + prediction + " ----")
+        //if(prediction == 0) negativeAction() else positiveAction()
+        zerosArray += prediction
       } else {
         println("cannot predict, vector size not 2048: " + sz)
+        zerosArray += 0.0
+      }
+
+      // Every 5 seconds output the sum of ad predictions
+      val window = 10
+      if( (zerosArray.length % window) == 0 ) {
+        val thresh = 7.0
+        val value = zerosArray.takeRight(window).sum
+        println("window: " + value)
+        if(value < thresh) negativeAction() else positiveAction()
       }
     }
 
