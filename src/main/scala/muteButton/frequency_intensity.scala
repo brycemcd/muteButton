@@ -60,7 +60,44 @@ object FrequencyIntensityRDD {
   }
 }
 
+object FrequencyIntensityStreamWithList {
+  def convertFileContentsToMeanIntensities(fileContents : DStream[String]) = {
+    val firstLine = """(0.00\d{1,})  (\d{1,}\.\d{1,})""".r
+    val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
+
+    val innerList = scala.collection.mutable.ListBuffer.empty[Tuple2[Double, Double]]
+    val outerList = scala.collection.mutable.ListBuffer.empty[List[LabeledFreqIntens]]
+
+    def randomString : String = scala.util.Random.alphanumeric.take(10).mkString
+
+    val res = fileContents.flatMap {
+      case firstLine(freq, intense) =>
+        val random = "freqs" + randomString
+
+        val innerStore = innerList.toList.map { case (fre, int) => (random, (fre, int)) }
+        if(innerStore.size == 2048) outerList += innerStore
+        innerList.clear()
+        innerList += (freq.toDouble -> intense.toDouble)
+        //Some( outerList )
+        if(innerStore.size == 2048) Some(innerStore) else None
+      case freqIntensLines(freq, intense) =>
+        //innerList += freq.toDouble
+        innerList += (freq.toDouble -> intense.toDouble)
+        None
+      case _ => None
+    }
+    //map( outer => outer.filter(_.size == 2048) )
+    res
+  }
+}
 object FrequencyIntensityStream {
+
+  // NOTE: this works because I have the guarantees:
+  // 1. The data is being sent over sequentially in the right order
+  // 2. The sequential data is processed on a single socket
+  // 3. A single thread is looping through the fileContents in the same
+  //    order that it is received on the network socket
+  // if any of the above are not correct this does not work well
   def mapFileToFreqIntensityList(fileContents : DStream[String]) = {
     val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
 

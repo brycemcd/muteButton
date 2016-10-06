@@ -51,7 +51,7 @@ object Main {
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
   //lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
-  lazy val ssc = new StreamingContext(sc, new Duration(500) )
+  lazy val ssc = new StreamingContext(sc, new Duration(2000) )
   val numberOfFrequenciesCaptured = 2048
   val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
   val sqlContext = new org.apache.spark.sql.SQLContext(sc)
@@ -60,13 +60,47 @@ object Main {
   def main(args: Array[String]) = {
     sc // init it here to quiet the logs and make stopping easier
     Logger.getRootLogger().setLevel(Level.ERROR)
-    //protectSanity
+    protectSanity
     //trainOfflineModel()
-    predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
+    //predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
     //getFreqs()
     val lrm = new LogRegModel(sc, false)
     //lrm.outputPointCount(sc)
     println("done")
+  }
+
+  def protectSanity = {
+    val lines = ssc.socketTextStream("10.1.2.230", 9999)
+    Logger.getRootLogger().setLevel(Level.ERROR)
+
+    val stream = FrequencyIntensityStreamWithList.convertFileContentsToMeanIntensities(lines)
+
+    stream.foreachRDD { rdd =>
+      //val allData = rdd.flatMap( outer => outer.flatMap(inner => inner) )
+      val allData = rdd.flatMap( outer => outer)
+      val orderedData = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(allData , 3.0)
+      val predictions = makePrediction(orderedData)
+      println("predictions " + predictions.count() + " " + predictions.sum)
+    }
+
+    //stream.foreachRDD { rddPart =>
+      //rddPart.foreachPartition { rdd =>
+        //rdd.foreach { outer =>
+          //outer.foreach { inner =>
+            //inner.sortBy(_._3).map { case(freq, inten, lab) =>
+              //val st = f"$freq%6.6f  $inten%6.6f  $lab\n"
+              //scala.tools.nsc.io.File("log/check").appendAll( st )
+            //}
+          //}
+        //}
+      //}
+    //}
+
+    //meanByKey.print()
+
+    ssc.start()
+    ssc.awaitTermination()  // Wait for the computation to terminate
+    sc.stop()
   }
   private def generateModelParams : Seq[SGDModelParams] = {
     // NOTE: I couldn't find in my notes if these were sensible defaults
@@ -81,7 +115,23 @@ object Main {
     sc.stop()
   }
 
-  import sqlContext.implicits._
+  def makePrediction(freqIntense : RDD[(Double, Vector)]) = {
+    val modelPath: String = "models/logreg.model-1475358050409"
+    val model = LogisticRegressionModel.load(modelPath)
+
+    val predictPointsDF = sqlContext.createDataFrame(freqIntense).toDF("DONOTUSE", "rawfeatures")
+
+    // NOTE: this should be created during training
+    val scalerPath: String = "models/scalerModel"
+    val transformedData = StandardScalerModel.load(scalerPath).transform(predictPointsDF)
+
+    val predictLabelAndRaw = model.transform(transformedData)
+      .select("rawPrediction", "prediction")
+      .map {
+        case Row(rawPrediction: Vector, prediction: Double) => (prediction, rawPrediction)
+      }
+      predictLabelAndRaw.map(_._1)
+  }
   def predictFromStream(negativeAction : () => Int,
                         positiveAction : () => Int,
                         modelPath: String = "models/logreg.model-1475358050409",
@@ -101,11 +151,11 @@ object Main {
 
       // FIXME: there must be a better way to make this usable as a dataframe
       val predictData = (3.0, Vectors.dense( mbk.map(_._2).collect ))
-      val predictVec = Vectors.dense( mbk.map(_._2).collect )
+      val predictList = List( List(1,2,3), List(2,3,4) )
 
       val sz = predictData._2.size
       if(sz == numberOfFrequenciesCaptured) {
-        val predictPointsDF = sqlContext.createDataFrame(Seq(predictData)).toDF("DONOTUSE", "rawfeatures")
+        val predictPointsDF = sqlContext.createDataFrame(predictList.toSeq).toDF("DONOTUSE", "rawfeatures")
         // NOTE: this should be created during training
         val transformedData = StandardScalerModel.load(scalerPath).transform(predictPointsDF)
 
