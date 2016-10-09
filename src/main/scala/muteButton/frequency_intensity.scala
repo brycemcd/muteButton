@@ -60,31 +60,54 @@ object FrequencyIntensityRDD {
   }
 }
 
+import scala.collection.mutable.ListBuffer
 object FrequencyIntensityStreamWithList {
   def convertFileContentsToMeanIntensities(fileContents : DStream[String]) = {
     val firstLine = """(0.00\d{1,})  (\d{1,}\.\d{1,})""".r
+    val firstLineWithJunk = """(0.000000)  (\d{1,}\.\d{1,})""".r
     val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
 
-    val innerList = scala.collection.mutable.ListBuffer.empty[Tuple2[Double, Double]]
-    val outerList = scala.collection.mutable.ListBuffer.empty[List[LabeledFreqIntens]]
+    val innerList = ListBuffer.empty[Tuple2[Double, Double]]
+    val outerList = ListBuffer.empty[List[LabeledFreqIntens]]
 
     def randomString : String = scala.util.Random.alphanumeric.take(10).mkString
 
-    val res = fileContents.flatMap {
-      case firstLine(freq, intense) =>
-        val random = "freqs" + randomString
+    def reportError(vari : Any) = {
+      vari match {
+        case str : String => if(!str.isEmpty) println("error: " + str)
+        case li : List[(Double, Double)] => if(li.size != 0) println("error: " + li.size)
+      }
+    }
 
-        val innerStore = innerList.toList.map { case (fre, int) => (random, (fre, int)) }
-        if(innerStore.size == 2048) outerList += innerStore
-        innerList.clear()
-        innerList += (freq.toDouble -> intense.toDouble)
-        //Some( outerList )
-        if(innerStore.size == 2048) Some(innerStore) else None
-      case freqIntensLines(freq, intense) =>
-        //innerList += freq.toDouble
-        innerList += (freq.toDouble -> intense.toDouble)
-        None
-      case _ => None
+    val res = fileContents.flatMap { line =>
+      (freqIntensLines findFirstIn line) match {
+        case Some(str) =>
+          val freq :: intense :: _ = str.split("  ").toList
+          // match first line
+          freq.toDouble match {
+            // first freq
+            case 0.000000 =>
+              val random = "freqs" + randomString
+              val innerStore = innerList.toList.map { case (fre, int) => (random, (fre, int)) }
+              innerList.clear()
+              innerList += (freq.toDouble -> intense.toDouble)
+
+              if(innerStore.size == 2048) {
+                Some(innerStore)
+              } else {
+                reportError(innerStore)
+                None
+              }
+            // another freq
+            case _ =>
+              innerList += (freq.toDouble -> intense.toDouble)
+              None
+
+          }
+        case None =>
+          reportError(line)
+          None
+      }
     }
     //map( outer => outer.filter(_.size == 2048) )
     res

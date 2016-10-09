@@ -45,13 +45,13 @@ object Main {
 
   lazy val conf = new SparkConf()
     .setAppName("muteButton")
-    .setMaster("local[*]")
+    .setMaster("local[2]")
     .set("spark.network.timeout", "240")
 
   lazy val sc = new SparkContext(conf)
   val streamWindow = 2
   //lazy val ssc = new StreamingContext(sc, Seconds(streamWindow))
-  lazy val ssc = new StreamingContext(sc, new Duration(2000) )
+  lazy val ssc = new StreamingContext(sc, new Duration(500) )
   val numberOfFrequenciesCaptured = 2048
   val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
   val sqlContext = new org.apache.spark.sql.SQLContext(sc)
@@ -76,25 +76,18 @@ object Main {
     val stream = FrequencyIntensityStreamWithList.convertFileContentsToMeanIntensities(lines)
 
     stream.foreachRDD { rdd =>
-      //val allData = rdd.flatMap( outer => outer.flatMap(inner => inner) )
+      // TODO: confirm that the freq-intense batch grouping is maintained
       val allData = rdd.flatMap( outer => outer)
       val orderedData = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(allData , 3.0)
+      println("captured Samples: " + orderedData.count())
       val predictions = makePrediction(orderedData)
-      println("predictions " + predictions.count() + " " + predictions.sum)
-    }
+      val pred_cnt = predictions.count()
+      val ad_ratio = if(pred_cnt == 0) 0 else predictions.sum / predictions.count()
 
-    //stream.foreachRDD { rddPart =>
-      //rddPart.foreachPartition { rdd =>
-        //rdd.foreach { outer =>
-          //outer.foreach { inner =>
-            //inner.sortBy(_._3).map { case(freq, inten, lab) =>
-              //val st = f"$freq%6.6f  $inten%6.6f  $lab\n"
-              //scala.tools.nsc.io.File("log/check").appendAll( st )
-            //}
-          //}
-        //}
-      //}
-    //}
+      val thresh = 0.7
+      println(s"window: $ad_ratio count: $pred_cnt")
+      //if(value < thresh) negativeAction() else positiveAction()
+    }
 
     //meanByKey.print()
 
