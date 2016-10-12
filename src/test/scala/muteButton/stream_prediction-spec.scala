@@ -36,15 +36,27 @@ class StreamPredictionSpec extends FunSpec {
 
   describe("loading model") {
     it("loads a logistic regression model with a filepath string") {
-      val model = StreamPrediction.logisticRegressionModel
+      val model = StreamPrediction.defaultLogisticRegressionModel
       assert(model.isInstanceOf[LogisticRegressionModel])
     }
   }
 
   describe("scalerModel") {
     it("loads a scaler model") {
-      val model = StreamPrediction.scalerModel
+      val model = StreamPrediction.defaultScalerModel
       assert(model.isInstanceOf[StandardScalerModel])
     }
   }
+
+  describe("makePredictions") {
+    it("makes predictions based on the model and data provided") {
+      val model = StreamPrediction.defaultLogisticRegressionModel
+      val rawData  = StreamPrediction.dataToDataFrame( Seq(dataPoint) )
+      val scaledData = StreamPrediction.defaultScalerModel.transform(rawData)
+      val prediction = StreamPrediction.predictFromData(scaledData, model)
+
+      assert(prediction.first().isInstanceOf[Tuple2[Double, Vector]])
+    }
+  }
+
 }

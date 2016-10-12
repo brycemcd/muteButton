@@ -81,16 +81,15 @@ object StreamPrediction {
   }
 
   // NOTE: this should be created during training
-  val logisticRegressionModel = loadLogisticRegressionModel("models/logreg.model-1475358050409")
-  private def loadLogisticRegressionModel(path : String) = LogisticRegressionModel.load(path)
+  val logisticRegressionModel : String => LogisticRegressionModel = LogisticRegressionModel.load(_ : String)
+  val defaultLogisticRegressionModel : LogisticRegressionModel = logisticRegressionModel("models/logreg.model-1475358050409")
 
-  val scalerModel : StandardScalerModel = loadScalerModel("models/scalerModel")
-  private def loadScalerModel(scalerPath : String) = StandardScalerModel.load(scalerPath)
+  val scalerModel : String => StandardScalerModel = StandardScalerModel.load( _ : String)
+  val defaultScalerModel : StandardScalerModel = scalerModel("models/scalerModel")
 
-  def transformScalerModel(f : => DataFrame) = scalerModel.transform(f)
-  val transformScalerModel = scalerModel.transform(_ : DataFrame)
+  def transformScalerModel(f : => DataFrame) = defaultScalerModel.transform(f)
 
-  val predictFromDataWithDefaultModel = predictFromData( _ : DataFrame, logisticRegressionModel)
+  val predictFromDataWithDefaultModel = predictFromData( _ : DataFrame, defaultLogisticRegressionModel)
   def predictFromData(data : DataFrame, model : LogisticRegressionModel) : RDD[(Double, Vector)] = {
     model.transform(data)
       .select("rawPrediction", "prediction")
