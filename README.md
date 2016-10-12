@@ -109,7 +109,7 @@ commands then move the files into positive and negative example directories
 on the source system.
 
 After a number of training examples have been produced, the audio sample should
-be extracted into frequency/intensity data files. This can be done with `./extra/supervised_data_freqs.sh`
+be extracted into frequency/intensity data files. This can be done by running `./extra/supervised_data_freqs.sh`
 
 These data files can be read in to the learner using a slightly
 modified code path. It's the same data, but not streamed over a socket. Each
@@ -121,7 +121,7 @@ in and distributed across the cluster that it is combined correctly when it's
 vectorized as a training sample. The easiest way I've found to do this as of now
 is to separate each sample into its own file and then add a third column to each file
 with its filename. When the training routine runs, it will group each frequency
-intensity touple together by its filename and output the correct vector.
+intensity tuple together by its filename and output the correct vector.
 
 To label each freq/intensity file so it's suitable for training, run the
 `extra/split_training_freqs.sh` command.
@@ -177,6 +177,6 @@ for f in freqa*; do sed -i "s:$:  $f:" $f; done
 ```bash
 # plays audio from TV into computer, saves file for later processing,
 # outputs frequencies and pipes audo into stereo
-sudo sox -t alsa hw:3 -p gain -10 | tee car_den_3 | sudo sox - -t alsa hw:2 stat -freq 2>&1 | nc 10.1.2.230 9999
+sudo sox -t alsa hw:3 -p gain -10 | tee car_den_3 | sudo sox - -t alsa hw:2 stat -freq gain -10 2>&1 | nc 10.1.2.230 9999
 ```
 

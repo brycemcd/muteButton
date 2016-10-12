@@ -10,6 +10,8 @@ import org.apache.spark.streaming._
 
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
+import scala.collection.mutable.ListBuffer
+import scala.util.matching.Regex
 
 // A = DStream, B = ReceiverInputDStream for streaming things
 // A = RDD, B =    for reading files
@@ -19,7 +21,6 @@ package object NewTypes {
 }
 
 import muteButton.NewTypes._
-import scala.util.matching.Regex
 
 object FrequencyIntensityRDD {
   def mapFileToLabeledFreqIntensity(fileContents : RDD[String]) = {
@@ -60,16 +61,11 @@ object FrequencyIntensityRDD {
   }
 }
 
-import scala.collection.mutable.ListBuffer
 object FrequencyIntensityStreamWithList {
   def convertFileContentsToMeanIntensities(fileContents : DStream[String]) = {
-    val firstLine = """(0.00\d{1,})  (\d{1,}\.\d{1,})""".r
-    val firstLineWithJunk = """(0.000000)  (\d{1,}\.\d{1,})""".r
     val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
 
     val innerList = ListBuffer.empty[Tuple2[Double, Double]]
-    val outerList = ListBuffer.empty[List[LabeledFreqIntens]]
-
     def randomString : String = scala.util.Random.alphanumeric.take(10).mkString
 
     def reportError(vari : Any) = {
@@ -109,7 +105,6 @@ object FrequencyIntensityStreamWithList {
           None
       }
     }
-    //map( outer => outer.filter(_.size == 2048) )
     res
   }
 }
