@@ -10,6 +10,8 @@ lazy val root = (project in file(".")).
     //mainClass := Some("Main"),
 
     pollInterval := 1000,
+    //ivyLoggingLevel := UpdateLogging.Warn,
+    logLevel := Level.Warn,
 
     resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
 

@@ -6,7 +6,10 @@ object PredictionAction {
   val positiveCase = () => toggleSystem("mute")
 
   private def toggleSystem(soundControl : String) : Int = {
-    //"echo '"+soundControl+"'>> predictions" !
     "sudo amixer set Speaker " + soundControl !
+  }
+
+  def ratioBasedMuteAction(threshold : Double, ad_ratio : Double) = {
+    if(ad_ratio < threshold) negativeCase() else positiveCase()
   }
 }

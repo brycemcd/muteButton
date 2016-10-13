@@ -145,7 +145,7 @@ data file. This is helpful to reduce disk I/O during the training phase.
 
 ### Generate Data For Modeling
 
-`sox dal_gb_20151213 -n remix 1,2 stat -freq > freqs.txt 2<&1`
+`sox dal_gb_20151213 -n stat -freq > freqs.txt 2<&1`
 
 ### Send Audio Data to Spark Streaming Socket
 

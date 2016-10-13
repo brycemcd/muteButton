@@ -18,6 +18,7 @@ import scala.util.matching.Regex
 package object NewTypes {
   type FreqIntensities = (Double, (Double, Int))
   type LabeledFreqIntens = (String, (Double, Double))
+  type PredictTuple = (Double, Vector)
 }
 
 import muteButton.NewTypes._

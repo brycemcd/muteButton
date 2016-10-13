@@ -34,18 +34,30 @@ import org.apache.spark.sql.types.{StructType,StructField,StringType};
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
 import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
 
-object StreamPrediction {
-  lazy val conf = new SparkConf()
+import muteButton.NewTypes._
+
+object SparkThings {
+  val conf = new SparkConf()
     .setAppName("muteButton")
     .setMaster("local[*]")
     .set("spark.network.timeout", "240")
 
-  lazy val sc = new SparkContext(conf)
+  val sc = new SparkContext(conf)
+  val ssc = new StreamingContext(sc, new Duration(4000) )
+  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  val rootLogger = Logger.getRootLogger()
+  rootLogger.setLevel(Level.ERROR)
+
+}
+
+object StreamPrediction {
+  val conf = SparkThings.conf
+  val sc = SparkThings.sc
+  val ssc = SparkThings.ssc
+  val sqlContext = SparkThings.sqlContext
   val streamWindow = 2
-  lazy val ssc = new StreamingContext(sc, new Duration(4000) )
   val numberOfFrequenciesCaptured = 2048
   val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
   def calcRatio(number : Double, divisor : Double) : Double = {
     divisor match {
@@ -54,30 +66,51 @@ object StreamPrediction {
     }
   }
 
+  def convertProcessedStreamToDataPoints(dataPoints : RDD[LabeledFreqIntens]) : RDD[PredictTuple] = {
+    FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(dataPoints , 3.0)
+  }
+
+  def flatMapsIt(rdd : RDD[List[(String, (Double, Double))]]) : RDD[LabeledFreqIntens] = rdd.flatMap { x => x }
+
+  // NOTE: I found this helpful: https://twitter.github.io/scala_school/pattern-matching-and-functional-composition.html
+  def makePredictionFromStreamedRDD = {
+    flatMapsIt _ andThen
+      convertProcessedStreamToDataPoints _ andThen
+      dataToDataFrame _ andThen
+      transformScalerModel _ andThen
+      predictFromDataWithDefaultModel _ andThen
+      extractPredictions _
+  }
+
+  def calculatePredictionRatio(predictions: RDD[Double]) : (Double, Double) = {
+      val pred_cnt = predictions.count()
+      val ad_ratio = calcRatio(predictions.sum, predictions.count())
+      (pred_cnt, ad_ratio)
+  }
+
+  def printPredictions(ad_ratio : Double, pred_cnt : Double) : Unit = {
+      println("===")
+      println(s"window: $ad_ratio count: $pred_cnt")
+      println("===")
+  }
+
   def predictFromStream = {
     val lines = ssc.socketTextStream("10.1.2.230", 9999)
-    Logger.getRootLogger().setLevel(Level.ERROR)
 
     val stream = FrequencyIntensityStreamWithList.convertFileContentsToMeanIntensities(lines)
 
     stream.foreachRDD { rdd =>
       // TODO: confirm that the freq-intense batch grouping is maintained
-      val allData = rdd.flatMap( outer => outer )
-      val orderedData = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(allData , 3.0)
-      val predictions = makePrediction(orderedData)
-      val pred_cnt = predictions.count()
-      val ad_ratio = calcRatio(predictions.sum, predictions.count())
+      val predictions = makePredictionFromStreamedRDD(rdd)
 
-      val thresh = 0.7
-      println("===")
-      println(s"window: $ad_ratio count: $pred_cnt")
-      println("===")
-      if(ad_ratio < thresh) PredictionAction.negativeCase() else PredictionAction.positiveCase()
-
-      ssc.start()
-      ssc.awaitTermination()  // Wait for the computation to terminate
-      sc.stop()
+      val (pred_cnt, ad_ratio) = calculatePredictionRatio(predictions)
+      printPredictions(ad_ratio, pred_cnt)
+      PredictionAction.ratioBasedMuteAction(0.7, ad_ratio)
     }
+
+    ssc.start()
+    ssc.awaitTermination()  // Wait for the computation to terminate
+    sc.stop()
   }
 
   // NOTE: this should be created during training
@@ -87,9 +120,9 @@ object StreamPrediction {
   val scalerModel : String => StandardScalerModel = StandardScalerModel.load( _ : String)
   val defaultScalerModel : StandardScalerModel = scalerModel("models/scalerModel")
 
-  def transformScalerModel(f : => DataFrame) = defaultScalerModel.transform(f)
+  def transformScalerModel(df : DataFrame) : DataFrame = defaultScalerModel.transform(df)
 
-  val predictFromDataWithDefaultModel = predictFromData( _ : DataFrame, defaultLogisticRegressionModel)
+  def predictFromDataWithDefaultModel(df : DataFrame) = predictFromData( df : DataFrame, defaultLogisticRegressionModel)
   def predictFromData(data : DataFrame, model : LogisticRegressionModel) : RDD[(Double, Vector)] = {
     model.transform(data)
       .select("rawPrediction", "prediction")
@@ -102,42 +135,34 @@ object StreamPrediction {
   def dataToDataFrame(data : Seq[Tuple2[Double, Vector]]) : DataFrame = sqlContext.createDataFrame(data).toDF("DONOTUSE", "rawfeatures")
   def dataToDataFrame(data : RDD[Tuple2[Double, Vector]]) : DataFrame = sqlContext.createDataFrame(data).toDF("DONOTUSE", "rawfeatures")
 
-  def makePrediction(freqIntense : RDD[(Double, Vector)]) : RDD[Double] = {
-    predictFromDataWithDefaultModel(transformScalerModel( dataToDataFrame(freqIntense) )) map(_._1)
-  }
+  def extractPredictions(data: RDD[(Double, Vector)]) : RDD[Double] = data map(_._1)
 }
 
 
 object Main {
-
-  lazy val conf = new SparkConf()
-    .setAppName("muteButton")
-    .setMaster("local[*]")
-    .set("spark.network.timeout", "240")
-
-  lazy val sc = new SparkContext(conf)
+  //lazy val conf = SparkThings.conf
+  //lazy val sc = SparkThings.sc
   val streamWindow = 2
-  lazy val ssc = new StreamingContext(sc, new Duration(4000) )
-  val numberOfFrequenciesCaptured = 2048
-  val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  //lazy val ssc = SparkThings.ssc
+  lazy val numberOfFrequenciesCaptured = 2048
+  lazy val frequenciesInWindow = numberOfFrequenciesCaptured * streamWindow
+  //lazy val sqlContext = SparkThings.sqlContext
 
 
   def main(args: Array[String]) = {
-    sc // init it here to quiet the logs and make stopping easier
-    Logger.getRootLogger().setLevel(Level.ERROR)
+    //sc // init it here to quiet the logs and make stopping easier
+    StreamPrediction.predictFromStream
     //protectSanity
     //trainOfflineModel()
     //predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
     //getFreqs()
-    val lrm = new LogRegModel(sc, false)
+    //val lrm = new LogRegModel(sc, false)
     //lrm.outputPointCount(sc)
     println("done")
   }
 
   def trainOfflineModel() = {
     //new LogRegModel(sc, false).trainModelsWithVaryingM()
-    new LogRegModel(sc, false).trainSingleModel
-    sc.stop()
+    //new LogRegModel(sc, false).trainSingleModel
   }
 }
