@@ -55,9 +55,6 @@ object FrequencyIntensityRDD {
 
   //def convertFileContentsToMeanIntensities(fileContents : RDD[String]) : RDD[(Double, Double)] = {
   def convertFileContentsToMeanIntensities(fileContents : RDD[String]) = {
-    //meanFrequencyIntensities(
-      //mapFileToFreqIntensityList(fileContents)
-    //)
     mapFileToLabeledFreqIntensity(fileContents)
   }
 }
