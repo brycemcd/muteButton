@@ -64,6 +64,7 @@ object Main {
 
   def main(args: Array[String]) = {
     //sc // init it here to quiet the logs and make stopping easier
+    // TODO: uncomment this to predict
     StreamPrediction.processStream
     //protectSanity
     //trainOfflineModel()

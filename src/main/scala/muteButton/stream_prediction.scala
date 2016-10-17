@@ -65,7 +65,7 @@ object StreamPrediction {
     val lines = ssc.socketTextStream("10.1.2.230", 9999)
 
     FrequencyIntensityStreamWithList.convertFileContentsToMeanIntensities(lines)
-      .foreachRDD { rdd => predictFromStream(rdd) }
+       .foreachRDD { rdd => predictFromStream(rdd) }
 
     ssc.start()
     ssc.awaitTermination()  // Wait for the computation to terminate

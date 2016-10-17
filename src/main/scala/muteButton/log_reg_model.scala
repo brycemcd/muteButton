@@ -38,7 +38,7 @@ class LogRegModel(
 
   lazy private val sqlContext = new SQLContext(sc)
 
-  private def deriveAllPointsFromLabeledFreqs(sc : SparkContext) : RDD[(Double, Vector)] = {
+  def deriveAllPointsFromLabeledFreqs(sc : SparkContext) : RDD[(Double, Vector)] = {
     val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/ad/all-labeled.txt"
     val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/game/all-labeled.txt"
     val trainAdLines = sc.textFile(adfile)

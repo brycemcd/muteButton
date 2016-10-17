@@ -13,13 +13,6 @@ import org.apache.log4j.Level
 import scala.collection.mutable.ListBuffer
 import scala.util.matching.Regex
 
-// A = DStream, B = ReceiverInputDStream for streaming things
-// A = RDD, B =    for reading files
-package object NewTypes {
-  type FreqIntensities = (Double, (Double, Int))
-  type LabeledFreqIntens = (String, (Double, Double))
-  type PredictTuple = (Double, Vector)
-}
 
 import muteButton.NewTypes._
 
@@ -60,50 +53,66 @@ object FrequencyIntensityRDD {
 }
 
 object FrequencyIntensityStreamWithList {
-  def convertFileContentsToMeanIntensities(fileContents : DStream[String]) = {
-    val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
+  val freqIntensLines = """(\d{1,}\.\d{1,})  (\d{1,}\.\d{1,})""".r
 
+  def parseLine(line : String) = {
+    (freqIntensLines findFirstIn line) match {
+      case Some(str) =>
+        val tup = str.split("  ")
+        Some( (tup(0)toDouble, tup(1).toDouble) )
+      case None =>
+        None
+    }
+  }
+
+  def isFirstLine(freqIntense : Tuple2[Double, Double]) : Boolean = {
+    freqIntense match {
+      case (0.0, _) => true
+      case _ => false
+    }
+  }
+
+  // TODO: make this a DStream
+  def convertFileContentsToMeanIntensities(fileContents : DStream[String]) : DStream[List[LabeledFreqIntens]] = {
     val innerList = ListBuffer.empty[Tuple2[Double, Double]]
-    def randomString : String = scala.util.Random.alphanumeric.take(10).mkString
 
-    def reportError(vari : Any) = {
-      vari match {
-        case str : String => if(!str.isEmpty) println("error: " + str)
-        case li : List[(Double, Double)] => if(li.size != 0) println("error: " + li.size)
+    def addToInnerList(tup : Tuple2[Double, Double]) = {
+      tup match {
+        case (freq, intense) => innerList += (freq -> intense)
       }
     }
 
-    val res = fileContents.flatMap { line =>
-      (freqIntensLines findFirstIn line) match {
-        case Some(str) =>
-          val freq :: intense :: _ = str.split("  ").toList
-          // match first line
-          freq.toDouble match {
-            // first freq
-            case 0.000000 =>
-              val random = "freqs" + randomString
-              val innerStore = innerList.toList.map { case (fre, int) => (random, (fre, int)) }
-              innerList.clear()
-              innerList += (freq.toDouble -> intense.toDouble)
-
-              if(innerStore.size == 2048) {
-                Some(innerStore)
-              } else {
-                reportError(innerStore)
-                None
-              }
-            // another freq
-            case _ =>
-              innerList += (freq.toDouble -> intense.toDouble)
-              None
-
-          }
-        case None =>
-          reportError(line)
+    fileContents.flatMap { line =>
+      val parsedLine = parseLine(line)
+      parsedLine match {
+        // a line without matches
+        case None => None
+        // first freq
+        case Some(_) if isFirstLine(parsedLine.get) =>
+          val innerStore = addFrequencyGroup(innerList)
+          innerList.clear()
+          addToInnerList(parsedLine.get)
+          if(innerStore.size == 2048) Some(innerStore) else reportError(innerStore)
+        case Some(_) =>
+          addToInnerList(parsedLine.get)
           None
       }
     }
-    res
+  }
+
+  private def randomString : String = scala.util.Random.alphanumeric.take(10).mkString
+
+  private def addFrequencyGroup(inner: ListBuffer[Tuple2[Double, Double]]) = {
+    val random = "freqs" + randomString
+    inner.toList.map { case (fre, int) => (random, (fre, int)) }
+  }
+
+  private def reportError(vari : Any) = {
+    vari match {
+      case str : String => if(!str.isEmpty) println("error: " + str)
+      case li : List[(Double, Double)] => if(li.size != 0) println("error: " + li.size)
+    }
+    None
   }
 }
 object FrequencyIntensityStream {
