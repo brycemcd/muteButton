@@ -20,6 +20,40 @@ import org.apache.spark.ml.param.{ParamPair, ParamMap}
 
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
 
+import org.scalameter._
+
+object FoolingAround {
+  def writeSummaryStatsToFile(points: RDD[Array[Double]], filename : String) = {
+    points.foreach { pointArr =>
+      // NOTE: this must be really inefficient. I bet it obtains a file lock every iteration
+      scala.tools.nsc.io.File(filename).appendAll(pointArr.mkString(",") + "\n")
+    }
+  }
+
+  def writeSummaryToFile = {
+    val lrm = new LogRegModel(devEnv=false)
+    val gamePoints = lrm.allPoints.filter(_._1 == 0.0)
+    val adPoints = lrm.allPoints.filter(_._1 == 1.0)
+    val gameSummary = calcSummaryStatsForSetOfPoints(gamePoints)
+    writeSummaryStatsToFile(gameSummary, "gameMeans.txt")
+    //val time = measure {
+    //}
+    //println(s"lrmTime: $time")
+
+    val adSummary = calcSummaryStatsForSetOfPoints(adPoints)
+    writeSummaryStatsToFile(adSummary, "adMeans.txt")
+  }
+
+  def calcSummaryStatsForSetOfPoints(points : RDD[(Double, Vector)]) = {
+    points.map { point =>
+      val normalized = new SummaryStats(point._2.toArray).normalizedArray
+      val summary = new SummaryStats(normalized)
+      Array[Double](summary.mean, summary.range, summary.cntMoreThanN(2.0), summary.cntMoreThanN(3.0))
+    }
+  }
+}
+
+
 object LogRegModel {
   def trainOfflineModelNEW(sc : SparkContext) = {
     // TODO figure out how to save a file of labeled points
@@ -32,13 +66,14 @@ object LogRegModel {
 }
 
 class LogRegModel(
-  sc: SparkContext,
+  sc: SparkContext = SparkThings.sc,
   devEnv: Boolean = true
 ) {
 
+
   lazy private val sqlContext = new SQLContext(sc)
 
-  def deriveAllPointsFromLabeledFreqs(sc : SparkContext) : RDD[(Double, Vector)] = {
+  def deriveAllPointsFromLabeledFreqs : RDD[(Double, Vector)] = {
     val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/ad/all-labeled.txt"
     val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/game/all-labeled.txt"
     val trainAdLines = sc.textFile(adfile)
@@ -61,7 +96,7 @@ class LogRegModel(
     trainGamePoints.union(trainAdPoints)
   }
 
-  def outputPointCount(sc : SparkContext) = deriveAllPointsFromLabeledFreqs(sc)
+  def outputPointCount(sc : SparkContext) = deriveAllPointsFromLabeledFreqs
 
   def scaleFeatures(allPoints: RDD[(Double, Vector)],
                           sqlContext: SQLContext,
@@ -115,7 +150,7 @@ class LogRegModel(
   val logName = "log/training-" + System.currentTimeMillis()
   val byTenPercentIncrements = (.10 to 1 by .10)
   val byFiftyPercentIncrements = (0.60 to 1 by 0.20)
-  lazy val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+  lazy val allPoints = deriveAllPointsFromLabeledFreqs.cache()
 
   def trainModelsWithVaryingM(seed : Long = 11L) = {
     def calcM(allPointsCount : Long) : scala.collection.immutable.Range = {

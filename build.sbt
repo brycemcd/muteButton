@@ -14,10 +14,12 @@ lazy val root = (project in file(".")).
     logLevel in (test):= Level.Debug,
 
     resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
+    resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
 
     scalaSource in Compile := baseDirectory.value / "src" / "main",
     scalaSource in Test := baseDirectory.value / "src" / "test",
 
+    libraryDependencies += "com.storm-enroute" %% "scalameter-core" % "0.7",
     libraryDependencies += "org.apache.spark" %% "spark-core" % "1.6.2",
     libraryDependencies += "org.apache.spark" %% "spark-streaming" % "1.6.2",
     libraryDependencies += "org.apache.spark" %% "spark-mllib" % "1.6.2",
