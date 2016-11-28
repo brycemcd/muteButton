@@ -53,6 +53,52 @@ object FoolingAround {
   }
 }
 
+object SignalDataPrep {
+  lazy val allPoints = deriveAllPointsFromLabeledFreqs.cache()
+  lazy val sc = SparkThings.sc
+  lazy private val sqlContext = new SQLContext(sc)
+
+  def deriveAllPointsFromLabeledFreqs : RDD[(Double, Vector)] = {
+    val adfile = "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt"
+    //val adfile =  "hdfs://spark3.thedevranch.net/football/freqs/ad/all-labeled.txt"
+    //val adfile =  "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/all-labeled.txt"
+    val gamefile = "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt"
+    //val gamefile = "hdfs://spark3.thedevranch.net/football/freqs/game/all-labeled.txt"
+    //val gamefile =  "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/all-labeled.txt"
+    val trainAdLines = sc.textFile(adfile)
+    val trainGameLines = sc.textFile(gamefile)
+
+    val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
+    val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
+
+    val trainAdPoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainAdTouples, 1.0)
+    val trainGamePoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainGameTouples, 0.0)
+
+    println("training ad points " + trainAdPoints.count())
+    println("training game points " + trainGamePoints.count())
+
+    trainGamePoints.union(trainAdPoints)
+  }
+
+  def scaleFeatures(allPoints: RDD[(Double, Vector)],
+                          scaledColumnName : String) = {
+
+    println("scaling")
+    val allPointsDF = sqlContext.createDataFrame(allPoints)
+      .toDF("label", "rawfeatures")
+
+    val scaler = new StandardScaler()
+      .setInputCol("rawfeatures")
+      .setOutputCol(scaledColumnName)
+      .setWithStd(true)
+      .setWithMean(false)
+
+    val scalerModel = scaler.fit(allPointsDF)
+    scalerModel.write.overwrite().save("models/scalerModel")
+    scalerModel.transform(allPointsDF)
+  }
+}
+
 
 object LogRegModel {
   def trainOfflineModelNEW(sc : SparkContext) = {
@@ -71,32 +117,8 @@ class LogRegModel(
 ) {
 
 
-  lazy private val sqlContext = new SQLContext(sc)
 
-  def deriveAllPointsFromLabeledFreqs : RDD[(Double, Vector)] = {
-    val adfile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/ad/all-labeled.txt"
-    val gamefile = if(devEnv) "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/game/freqs/ari_phi_chunked095_freqs-labeled.txt" else "hdfs://spark3.thedevranch.net/football/freqs/game/all-labeled.txt"
-    val trainAdLines = sc.textFile(adfile)
-    val trainGameLines = sc.textFile(gamefile)
-    //println("training ad lines " + trainAdLines.count())
-    //println("training game lines " + trainGameLines.count())
-
-    val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
-    val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
-
-    //println("training ad touples " + trainAdTouples.count())
-    //println("training game touples " + trainGameTouples.count())
-
-    val trainAdPoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainAdTouples, 1.0)
-    val trainGamePoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainGameTouples, 0.0)
-
-    println("training ad points " + trainAdPoints.count())
-    println("training game points " + trainGamePoints.count())
-
-    trainGamePoints.union(trainAdPoints)
-  }
-
-  def outputPointCount(sc : SparkContext) = deriveAllPointsFromLabeledFreqs
+  def outputPointCount(sc : SparkContext) = SignalDataPrep.deriveAllPointsFromLabeledFreqs
 
   def scaleFeatures(allPoints: RDD[(Double, Vector)],
                           sqlContext: SQLContext,
@@ -135,7 +157,7 @@ class LogRegModel(
   }
 
   //def trainModelsWithVaryingPoly(seed : Long = 11L) = {
-    //val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+    //val allPoints = SignalDataPrep.deriveAllPointsFromLabeledFreqs(sc).cache()
     //val logName = "log/training-poly-" + System.currentTimeMillis()
 
       //val somePoints = sc.parallelize( allPoints.takeSample(false, 250, seed) )
@@ -150,8 +172,10 @@ class LogRegModel(
   val logName = "log/training-" + System.currentTimeMillis()
   val byTenPercentIncrements = (.10 to 1 by .10)
   val byFiftyPercentIncrements = (0.60 to 1 by 0.20)
-  lazy val allPoints = deriveAllPointsFromLabeledFreqs.cache()
 
+  // TOOD: refactor this out
+  val allPoints = SignalDataPrep.allPoints
+  lazy private val sqlContext = new SQLContext(sc)
   def trainModelsWithVaryingM(seed : Long = 11L) = {
     def calcM(allPointsCount : Long) : scala.collection.immutable.Range = {
       val tenPer = (allPointsCount * 0.10).toInt
@@ -175,7 +199,7 @@ class LogRegModel(
   }
 
   //def trainModelWithAllData() = {
-    //val allPoints = deriveAllPointsFromLabeledFreqs(sc).cache()
+    //val allPoints = SignalDataPrep.deriveAllPointsFromLabeledFreqs(sc).cache()
     //val logName = "log/training-" + System.currentTimeMillis()
 
     //println("total training samples: " + allPoints.count())

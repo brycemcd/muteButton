@@ -54,7 +54,7 @@ object SparkThings {
 
 object Main {
   //lazy val conf = SparkThings.conf
-  //lazy val sc = SparkThings.sc
+  lazy val sc = SparkThings.sc
   val streamWindow = 2
   //lazy val ssc = SparkThings.ssc
   lazy val numberOfFrequenciesCaptured = 2048
@@ -65,7 +65,9 @@ object Main {
   def main(args: Array[String]) = {
     //sc // init it here to quiet the logs and make stopping easier
     // TODO: uncomment this to predict
-    StreamPrediction.processStream
+    //StreamPrediction.processStream
+    // TODO: uncomment this for offline training
+    new NNModel(devEnv = false).singleNNModel
     //FoolingAround.writeSummaryToFile
     //protectSanity
     //trainOfflineModel()
@@ -73,6 +75,7 @@ object Main {
     //getFreqs()
     //val lrm = new LogRegModel(sc, false)
     //lrm.outputPointCount(sc)
+    sc.stop()
     println("done")
   }
 

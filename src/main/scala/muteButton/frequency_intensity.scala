@@ -27,6 +27,7 @@ object FrequencyIntensityRDD {
   }
 
   def convertFreqIntensToLabeledPoint(labeledTouples : RDD[LabeledFreqIntens], label : Double) = {
+    println("CONVERTING")
     labeledTouples.groupByKey().map(_._2).map(_.toArray.sortBy(_._1)).map { x =>
       (label, Vectors.dense( x.map(_._2) ))
     }
