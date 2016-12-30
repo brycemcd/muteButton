@@ -38,6 +38,12 @@ class NNModel(override val devEnv: Boolean = true) extends SignalModel {
     trainOfflineModel(scaledPoints)
   }
 
+  def trainOfflineModel(allPoints: DataFrame) = {
+    paramGrid.foreach { modelParam =>
+      runTrainingAndCV(baseModel, modelParam)
+    }
+  }
+
   val paramGrid = new ParamGridBuilder()
     .addGrid(baseModel.layers, Array(
       Array[Int](2048, 5, 4, 2),
@@ -50,13 +56,6 @@ class NNModel(override val devEnv: Boolean = true) extends SignalModel {
       //Array[Int](2048, 4096, 2) # NOTE: does not complete on one box
     ))
       .build()
-  def trainOfflineModel(allPoints: DataFrame) = {
-
-
-    paramGrid.foreach { modelParam =>
-      runTrainingAndCV(baseModel, modelParam)
-    }
-  }
 
   def runTrainingAndCV(mp : MultilayerPerceptronClassifier,
                        modelParams : ParamMap) = {

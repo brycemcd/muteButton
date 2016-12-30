@@ -37,10 +37,10 @@ class SignalModel(
     .setMetricName("f1")
 
 
-  def printModelMetrics(m : Long,
+  def printModelMetrics[M](m : Long,
                         trainingEval : Double,
                         cvEval : Double,
-                        model : MultilayerPerceptronClassificationModel,
+                        model : M,
                         additionalLogDetails : Array[_ <: Any],
                         appendFileName : String = "") = {
 

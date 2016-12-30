@@ -65,13 +65,15 @@ object Main {
   def main(args: Array[String]) = {
     //sc // init it here to quiet the logs and make stopping easier
     // TODO: uncomment this to predict
-    //StreamPrediction.processStream
+    StreamPrediction.processStream
     // TODO: uncomment this for offline training
-    new NNModel(devEnv = false).singleNNModel
+    //new NNModel(devEnv = false).singleNNModel
+    //
+    //new GBTModel(devEnv = true).singleGBTModel
+    //
     //FoolingAround.writeSummaryToFile
     //protectSanity
     //trainOfflineModel()
-    //predictFromStream(PredictionAction.negativeCase, PredictionAction.positiveCase)
     //getFreqs()
     //val lrm = new LogRegModel(sc, false)
     //lrm.outputPointCount(sc)
