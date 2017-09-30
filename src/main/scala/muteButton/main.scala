@@ -8,7 +8,6 @@ import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.ReceiverInputDStream
 import org.apache.spark.streaming.dstream.DStream
 
-//import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.linalg.Vector
 
@@ -39,7 +38,7 @@ import muteButton.NewTypes._
 object SparkThings {
   val conf = new SparkConf()
     .setAppName("muteButton")
-    .setMaster("local[*]")
+    .setMaster("local[2]")
     .set("spark.network.timeout", "240")
 
   val sc = new SparkContext(conf)
@@ -62,10 +61,18 @@ object Main {
   //lazy val sqlContext = SparkThings.sqlContext
 
 
-  def main(args: Array[String]) = {
-    //sc // init it here to quiet the logs and make stopping easier
-    // TODO: uncomment this to predict
+  private def streamProcessing() = {
     StreamPrediction.processStream
+  }
+
+  private def trainNNModel() = {
+    new NNModel(devEnv = false).singleNNModel
+  }
+
+  def main(args: Array[String]) = {
+    sc // init it here to quiet the logs and make stopping easier
+    // TODO: uncomment this to predict
+    //streamProcessing()
     // TODO: uncomment this for offline training
     //new NNModel(devEnv = false).singleNNModel
     //
@@ -75,10 +82,17 @@ object Main {
     //protectSanity
     //trainOfflineModel()
     //getFreqs()
-    //val lrm = new LogRegModel(sc, false)
+    // NOTE: uncomment the next two lines to train a log reg model
+    trainLogRegModel
+
     //lrm.outputPointCount(sc)
     sc.stop()
     println("done")
+  }
+
+  def trainLogRegModel = {
+    val lrm = new LogRegModel(sc, true)
+    lrm.trainSingleModel
   }
 
   def trainOfflineModel() = {

@@ -133,7 +133,7 @@ data file. This is helpful to reduce disk I/O during the training phase.
 
 1. Start TCP server `ruby extra/tcp_server.rb`
 
-2. Start Prediction Software `sbt run`
+2. Start Prediction Software `sbt -mem 24000 -Dspark.master=local[*] run`
 
 3. Feed audio data into prediction software
 
