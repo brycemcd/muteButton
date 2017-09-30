@@ -7,8 +7,7 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.DataFrame
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.mllib.linalg.Vector
-import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.ml.linalg.{Vector, Vectors}
 
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.feature.{StandardScaler, PolynomialExpansion}
@@ -28,7 +27,7 @@ class SignalModel(
 ) {
 
   lazy val points = SignalDataPrep.allPoints
-  lazy val scaledPoints = SignalDataPrep.scaleFeatures(points, "features").cache()
+  lazy val scaledPoints = SignalDataPrep.scaleFeatures("scaledFeatures").cache()
   lazy val splits = scaledPoints.randomSplit(Array(0.8, 0.1, 0.1), seed = 11L)
   lazy val training = splits(0).cache()
   lazy val crossVal = splits(1).cache()

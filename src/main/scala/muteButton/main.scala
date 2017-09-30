@@ -8,8 +8,8 @@ import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.ReceiverInputDStream
 import org.apache.spark.streaming.dstream.DStream
 
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.linalg.Vector
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.linalg.Vector
 
 //import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD,LogisticRegressionWithLBFGS, LogisticRegressionModel}
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
@@ -43,7 +43,11 @@ object SparkThings {
 
   val sc = new SparkContext(conf)
   val ssc = new StreamingContext(sc, new Duration(4000) )
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  //val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+  val sqlContext = SparkSession.builder
+    .master("local[2]")
+    .appName("muteButton")
+    .getOrCreate()
   val rootLogger = Logger.getRootLogger()
   rootLogger.setLevel(Level.ERROR)
 
@@ -61,9 +65,9 @@ object Main {
   //lazy val sqlContext = SparkThings.sqlContext
 
 
-  private def streamProcessing() = {
-    StreamPrediction.processStream
-  }
+  //private def streamProcessing() = {
+    //StreamPrediction.processStream
+  //}
 
   private def trainNNModel() = {
     new NNModel(devEnv = false).singleNNModel
@@ -82,7 +86,7 @@ object Main {
     //protectSanity
     //trainOfflineModel()
     //getFreqs()
-    // NOTE: uncomment the next two lines to train a log reg model
+
     trainLogRegModel
 
     //lrm.outputPointCount(sc)
@@ -91,7 +95,7 @@ object Main {
   }
 
   def trainLogRegModel = {
-    val lrm = new LogRegModel(sc, true)
+    val lrm = new LogRegModel(true)
     lrm.trainSingleModel
   }
 

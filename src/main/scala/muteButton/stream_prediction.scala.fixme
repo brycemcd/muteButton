@@ -36,8 +36,9 @@ object StreamPrediction {
       convertProcessedStreamToDataPoints _ andThen
       dataToDataFrame _ andThen
       transformScalerModel _ andThen
-      predictFromDataWithDefaultModel _ andThen
-      extractPredictions _
+      predictFromDataWithDefaultModel _
+      //FIXME
+      //extractPredictions _
   }
 
   def calculatePredictionRatio(predictions: RDD[Double]) : (Double, Double) = {
@@ -82,12 +83,16 @@ object StreamPrediction {
   def transformScalerModel(df : DataFrame) : DataFrame = defaultScalerModel.transform(df)
 
   def predictFromDataWithDefaultModel(df : DataFrame) = predictFromData( df : DataFrame, defaultLogisticRegressionModel)
-  def predictFromData(data : DataFrame, model : LogisticRegressionModel) : RDD[(Double, Vector)] = {
-    model.transform(data)
-      .select("rawPrediction", "prediction")
-      .map {
-        case Row(rawPrediction: Vector, prediction: Double) => (prediction, rawPrediction)
-      }
+  def predictFromData(data : DataFrame, model : LogisticRegressionModel) = {
+  }
+
+  def predictFromDataFIXME(data : DataFrame, model : LogisticRegressionModel) : RDD[(Double, Vector)] = {
+    // FIXME
+    //model.transform(data)
+      //.select("rawPrediction", "prediction")
+      //.map {
+        //case Row(rawPrediction: Vector, prediction: Double) => (prediction, rawPrediction)
+      //}
   }
 
 

@@ -3,14 +3,16 @@ package muteButton
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.ml.feature.StandardScaler
-import org.apache.spark.mllib.linalg.Vector
+import org.apache.spark.ml.linalg.Vector
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.Dataset
 
 object SignalDataPrep {
   lazy val allPoints = deriveAllPointsFromLabeledFreqs.cache()
   lazy val sc = SparkThings.sc
-  lazy private val sqlContext = new SQLContext(sc)
+  lazy private val sqlContext = SparkThings.sqlContext //new SQLContext(sc)
 
-  def deriveAllPointsFromLabeledFreqs : RDD[(Double, Vector)] = {
+  def deriveAllPointsFromLabeledFreqs : Dataset[Row] = {
     val adfile = "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/ari_phi_chunked091_freqs-labeled.txt"
     //val adfile =  "hdfs://spark3.thedevranch.net/football/freqs/ad/all-labeled.txt"
     //val adfile =  "/media/brycemcd/filestore/spark2bkp/football/supervised_samples/ad/freqs/all-labeled.txt"
@@ -21,33 +23,30 @@ object SignalDataPrep {
     val trainAdLines = sc.textFile(adfile)
     val trainGameLines = sc.textFile(gamefile)
 
-    val trainAdTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
-    val trainGameTouples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
+    val trainAdTuples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainAdLines)
+    val trainGameTuples = FrequencyIntensityRDD.convertFileContentsToMeanIntensities(trainGameLines)
 
-    val trainAdPoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainAdTouples, 1.0)
-    val trainGamePoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainGameTouples, 0.0)
+    val trainAdPoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainAdTuples, 1.0)
+    val trainGamePoints = FrequencyIntensityRDD.convertFreqIntensToLabeledPoint(trainGameTuples, 0.0)
 
     println("training ad points " + trainAdPoints.count())
     println("training game points " + trainGamePoints.count())
 
-    trainGamePoints.union(trainAdPoints)
+    import sqlContext.implicits._
+    trainGamePoints.union(trainAdPoints).toDF("label", "rawFeatures")
   }
 
-  def scaleFeatures(allPoints: RDD[(Double, Vector)],
-                          scaledColumnName : String) = {
+  def scaleFeatures(scaledColumnName : String) = {
 
     println("scaling")
-    val allPointsDF = sqlContext.createDataFrame(allPoints)
-      .toDF("label", "rawfeatures")
-
     val scaler = new StandardScaler()
-      .setInputCol("rawfeatures")
+      .setInputCol("rawFeatures")
       .setOutputCol(scaledColumnName)
       .setWithStd(true)
       .setWithMean(false)
 
-    val scalerModel = scaler.fit(allPointsDF)
+    val scalerModel = scaler.fit(allPoints)
     scalerModel.write.overwrite().save("models/scalerModel")
-    scalerModel.transform(allPointsDF)
+    scalerModel.transform(allPoints)
   }
 }
